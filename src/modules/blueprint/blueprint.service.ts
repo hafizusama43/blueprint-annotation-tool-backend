@@ -166,18 +166,20 @@ export async function deleteBlueprintById(id: string): Promise<BlueprintWithPage
     });
 }
 
-
 const PRESIGNED_EXPIRES_IN_SECONDS = 3600; // 1 hour
 
 function sanitizeFileName(fileName: string): string {
-    const base = fileName.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/-+/g, '-').slice(0, 120);
+    const base = fileName
+        .replace(/[^a-zA-Z0-9._-]/g, '-')
+        .replace(/-+/g, '-')
+        .slice(0, 120);
     return base || 'file';
 }
 
 function buildObjectKey(fileName: string): string {
     const safeName = sanitizeFileName(fileName);
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    return `blueprints/${unique}-${safeName}`;
+    return `raw-files/${unique}-${safeName}`;
 }
 
 function buildPublicFileUrl(key: string): string | null {

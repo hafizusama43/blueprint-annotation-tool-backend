@@ -313,7 +313,9 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
             fileName = downloadedFile.fileName;
             cleanupSourceFile = true;
         } else {
-            return next(createError('Original blueprint file could not be resolved for retry', 400));
+            return next(
+                createError('Original blueprint file could not be resolved for retry', 400),
+            );
         }
 
         enqueuePdfBlueprintProcessing({
@@ -350,7 +352,6 @@ export async function deleteBlueprint(req: Request, res: Response, next: NextFun
         next(error);
     }
 }
-
 
 export async function getPreSignedUrl(req: Request, res: Response, next: NextFunction) {
     try {

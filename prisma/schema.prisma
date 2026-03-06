@@ -99,6 +99,7 @@ enum ShapeType {
 }
 
 enum BlueprintProcessingStatus {
+    PENDING
     PROCESSING
     READY
     FAILED

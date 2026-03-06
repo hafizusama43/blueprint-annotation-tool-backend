@@ -10,7 +10,8 @@ export const r2Client = new S3Client({
         accessKeyId: env.CF_R2_ACCESS_KEY,
         secretAccessKey: env.CF_R2_SECRET_KEY,
     },
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
 });
-
 export const R2_BUCKET = env.CF_R2_BUCKET;
 export const R2_PUBLIC_BASE_URL = env.CF_R2_PUBLIC_BASE_URL ?? null;
