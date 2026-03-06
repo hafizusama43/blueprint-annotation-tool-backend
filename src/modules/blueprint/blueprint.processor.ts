@@ -9,6 +9,7 @@ type ProcessingJob = {
     blueprintId: string;
     filePath: string;
     fileName: string;
+    cleanupSourceFile?: boolean;
 };
 
 type PageAsset = {
@@ -83,6 +84,10 @@ export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
                 });
             } catch (updateError) {
                 console.error('Failed to update blueprint processing status', updateError);
+            }
+        } finally {
+            if (job.cleanupSourceFile) {
+                await rm(job.filePath, { force: true });
             }
         }
     });

@@ -15,6 +15,11 @@ export const envSchema = z.object({
     FRONTEND_URL: z.string().url().default('https://www.rohanonlinegrocery.com'),
     CORS_ORIGIN: z.string().optional(),
     APP_VERSION: z.string().default('1.0.0'),
+    CF_R2_ACCESS_KEY: z.string().min(1),
+    CF_R2_SECRET_KEY: z.string().min(1),
+    CF_R2_ACCOUNT_ID: z.string().min(1),
+    CF_R2_BUCKET: z.string().min(1),
+    CF_R2_PUBLIC_BASE_URL: z.string().url().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

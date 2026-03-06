@@ -1,5 +1,19 @@
+import { createWriteStream } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import type { Blueprint, BlueprintPage, BlueprintProcessingStatus, Prisma } from '@prisma/client';
+import {
+    DeleteObjectCommand,
+    GetObjectCommand,
+    HeadObjectCommand,
+    PutObjectCommand,
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { prisma } from '../../config/prisma';
+import { r2Client, R2_BUCKET, R2_PUBLIC_BASE_URL } from '../../config/r2';
+import { createError } from '../../middleware/error.middleware';
+import { uploadsDirectory } from '../../middleware/upload.middleware';
 
 export type BlueprintPayload = Prisma.BlueprintCreateInput;
 export type BlueprintWithPages = Blueprint & {
@@ -150,4 +164,150 @@ export async function deleteBlueprintById(id: string): Promise<BlueprintWithPage
             },
         },
     });
+}
+
+
+const PRESIGNED_EXPIRES_IN_SECONDS = 3600; // 1 hour
+
+function sanitizeFileName(fileName: string): string {
+    const base = fileName.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/-+/g, '-').slice(0, 120);
+    return base || 'file';
+}
+
+function buildObjectKey(fileName: string): string {
+    const safeName = sanitizeFileName(fileName);
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    return `blueprints/${unique}-${safeName}`;
+}
+
+function buildPublicFileUrl(key: string): string | null {
+    return R2_PUBLIC_BASE_URL ? `${R2_PUBLIC_BASE_URL.replace(/\/$/, '')}/${key}` : null;
+}
+
+function buildLocalUploadFileName(originalFileName: string): string {
+    const extension = path.extname(originalFileName).toLowerCase() || '.bin';
+    const safeBaseName = path
+        .basename(originalFileName, extension)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 80);
+
+    const finalBase = safeBaseName || 'blueprint';
+    const uniqueSuffix = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+    return `${finalBase}-${uniqueSuffix}${extension}`;
+}
+
+export type PresignedUploadResult = {
+    uploadUrl: string;
+    method: 'PUT';
+    headers: Record<string, string>;
+    key: string;
+    fileUrl: string | null;
+    expiresIn: number;
+};
+
+export type R2ObjectMetadata = {
+    key: string;
+    fileUrl: string;
+    contentType: string | null;
+    fileSizeBytes: number | null;
+};
+
+export type DownloadedR2Object = {
+    filePath: string;
+    fileName: string;
+};
+
+export async function getPresignedUploadUrl(
+    fileName: string,
+    contentType?: string,
+): Promise<PresignedUploadResult> {
+    const key = buildObjectKey(fileName);
+    const headers: Record<string, string> = {};
+
+    if (contentType) {
+        headers['Content-Type'] = contentType;
+    }
+
+    const command = new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        ...(contentType && { ContentType: contentType }),
+    });
+
+    const uploadUrl = await getSignedUrl(r2Client, command, {
+        expiresIn: PRESIGNED_EXPIRES_IN_SECONDS,
+    });
+
+    const fileUrl = buildPublicFileUrl(key);
+
+    return {
+        uploadUrl,
+        method: 'PUT',
+        headers,
+        key,
+        fileUrl,
+        expiresIn: PRESIGNED_EXPIRES_IN_SECONDS,
+    };
+}
+
+export async function getR2ObjectMetadata(key: string): Promise<R2ObjectMetadata> {
+    const fileUrl = buildPublicFileUrl(key);
+    if (!fileUrl) {
+        throw createError('CF_R2_PUBLIC_BASE_URL must be configured to finalize uploads', 500);
+    }
+
+    try {
+        const response = await r2Client.send(
+            new HeadObjectCommand({
+                Bucket: R2_BUCKET,
+                Key: key,
+            }),
+        );
+
+        return {
+            key,
+            fileUrl,
+            contentType: response.ContentType ?? null,
+            fileSizeBytes: response.ContentLength ?? null,
+        };
+    } catch (error) {
+        throw createError('Uploaded file was not found in R2', 404, error);
+    }
+}
+
+export async function downloadR2ObjectToUploads(
+    key: string,
+    originalFileName: string,
+): Promise<DownloadedR2Object> {
+    const fileName = buildLocalUploadFileName(originalFileName);
+    const filePath = path.resolve(uploadsDirectory, fileName);
+
+    await mkdir(uploadsDirectory, { recursive: true });
+
+    const response = await r2Client.send(
+        new GetObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: key,
+        }),
+    );
+
+    if (!response.Body) {
+        throw createError('Uploaded file content is empty in R2', 400);
+    }
+
+    const writeStream = createWriteStream(filePath);
+    await pipeline(response.Body as NodeJS.ReadableStream, writeStream);
+
+    return { filePath, fileName };
+}
+
+export async function deleteR2Object(key: string): Promise<void> {
+    await r2Client.send(
+        new DeleteObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: key,
+        }),
+    );
 }

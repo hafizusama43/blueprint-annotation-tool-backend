@@ -1,26 +1,19 @@
 import { access, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { Request, Response, NextFunction } from 'express';
-import { z } from 'zod';
 import { BlueprintProcessingStatus, type Prisma } from '@prisma/client';
 import * as blueprintService from './blueprint.service';
 import { createError } from '../../middleware/error.middleware';
 import { enqueuePdfBlueprintProcessing } from './blueprint.processor';
 import { uploadsDirectory } from '../../middleware/upload.middleware';
+import {
+    blueprintSchema,
+    uploadBlueprintSchema,
+    type PresignedUploadRequest,
+    type UploadBlueprintRequest,
+} from '../../schemas/blueprint.schemas';
 
-const blueprintSchema = z.object({
-    name: z.string().min(2),
-    description: z.string().optional(),
-    fileUrl: z.string().min(2),
-    pageCount: z.number().int().positive().optional(),
-    metadata: z.record(z.any()).optional(),
-});
-
-const uploadBlueprintSchema = z.object({
-    name: z.string().min(2).optional(),
-    description: z.string().optional(),
-    metadata: z.string().optional(),
-});
+const allowedBlueprintMimeTypes = new Set(['application/pdf', 'image/png', 'image/jpeg']);
 
 function parseMetadata(metadataInput: string | undefined): Prisma.InputJsonValue | undefined {
     if (!metadataInput) {
@@ -38,6 +31,40 @@ function parseMetadata(metadataInput: string | undefined): Prisma.InputJsonValue
 function createDefaultBlueprintName(originalName: string): string {
     const withoutExtension = originalName.replace(/\.[^/.]+$/, '').trim();
     return withoutExtension.length > 0 ? withoutExtension : 'Blueprint';
+}
+
+function attachR2Metadata(
+    metadata: Prisma.InputJsonValue | undefined,
+    key: string,
+): Prisma.InputJsonObject {
+    const baseMetadata =
+        metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? (metadata as Prisma.InputJsonObject)
+            : {};
+
+    return {
+        ...baseMetadata,
+        storage: {
+            provider: 'r2',
+            key,
+        },
+    };
+}
+
+function getR2ObjectKeyFromMetadata(metadata: Prisma.JsonValue | null): string | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return null;
+    }
+
+    const storage = (metadata as Record<string, unknown>).storage;
+    if (!storage || typeof storage !== 'object' || Array.isArray(storage)) {
+        return null;
+    }
+
+    const provider = (storage as Record<string, unknown>).provider;
+    const key = (storage as Record<string, unknown>).key;
+
+    return provider === 'r2' && typeof key === 'string' && key.length > 0 ? key : null;
 }
 
 function resolveUploadsPathFromUrl(fileUrl: string): string | null {
@@ -81,7 +108,17 @@ function getPdfPagesDirectoryPathFromFileUrl(fileUrl: string): string | null {
 async function cleanupBlueprintFiles(blueprint: {
     fileUrl: string;
     mimeType: string | null;
+    metadata: Prisma.JsonValue | null;
 }): Promise<void> {
+    const r2ObjectKey = getR2ObjectKeyFromMetadata(blueprint.metadata);
+    if (r2ObjectKey) {
+        try {
+            await blueprintService.deleteR2Object(r2ObjectKey);
+        } catch (error) {
+            console.error('Failed to delete R2 blueprint file', error);
+        }
+    }
+
     const uploadedFilePath = resolveUploadsPathFromUrl(blueprint.fileUrl);
     if (uploadedFilePath) {
         try {
@@ -187,45 +224,46 @@ export async function createBlueprint(req: Request, res: Response, next: NextFun
 
 export async function uploadBlueprint(req: Request, res: Response, next: NextFunction) {
     try {
-        if (!req.file) {
-            return next(createError('Blueprint file is required (field name: file)', 400));
+        const payload = req.body as UploadBlueprintRequest;
+        const metadata = parseMetadata(payload.metadata);
+        const r2Object = await blueprintService.getR2ObjectMetadata(payload.key);
+
+        if (!r2Object.contentType || !allowedBlueprintMimeTypes.has(r2Object.contentType)) {
+            return next(createError('Only PDF, PNG, JPG, and JPEG files are allowed.', 400));
         }
 
-        const payload = uploadBlueprintSchema.parse(req.body);
-        const metadata = parseMetadata(payload.metadata);
-        const fileUrl = `/uploads/${req.file.filename}`;
-        const isPdf = req.file.mimetype === 'application/pdf';
+        const fileUrl = payload.fileUrl ?? r2Object.fileUrl;
+        const isPdf = r2Object.contentType === 'application/pdf';
         const createPayload: Prisma.BlueprintCreateInput = {
-            name: payload.name ?? createDefaultBlueprintName(req.file.originalname),
+            name: payload.name ?? createDefaultBlueprintName(payload.originalFileName),
             description: payload.description ?? null,
             fileUrl,
-            originalFileName: req.file.originalname,
-            mimeType: req.file.mimetype,
-            fileSizeBytes: req.file.size,
+            originalFileName: payload.originalFileName,
+            mimeType: r2Object.contentType,
+            fileSizeBytes: r2Object.fileSizeBytes,
             pageCount: isPdf ? 0 : 1,
             processingStatus: isPdf
                 ? BlueprintProcessingStatus.PROCESSING
                 : BlueprintProcessingStatus.READY,
             processedAt: isPdf ? null : new Date(),
-            metadata,
-            ...(isPdf
-                ? {}
-                : {
-                      pages: {
-                          create: buildBlueprintPages([{ imageUrl: fileUrl }]),
-                      },
-                  }),
+            metadata: attachR2Metadata(metadata, payload.key),
         };
 
         const created = await blueprintService.createBlueprint(createPayload);
 
-        if (isPdf) {
-            enqueuePdfBlueprintProcessing({
-                blueprintId: created.id,
-                filePath: req.file.path,
-                fileName: req.file.filename,
-            });
-        }
+        // if (isPdf) {
+        //     const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
+        //         payload.key,
+        //         payload.originalFileName,
+        //     );
+
+        //     enqueuePdfBlueprintProcessing({
+        //         blueprintId: created.id,
+        //         filePath: downloadedFile.filePath,
+        //         fileName: downloadedFile.fileName,
+        //         cleanupSourceFile: true,
+        //     });
+        // }
 
         res.status(isPdf ? 202 : 201).json(created);
     } catch (error) {
@@ -249,23 +287,40 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
             return next(createError('Blueprint is already being processed', 409));
         }
 
-        const filePath = resolveUploadsPathFromUrl(blueprint.fileUrl);
-        if (!filePath) {
-            return next(createError('Invalid blueprint file path', 400));
-        }
-
-        try {
-            await access(filePath);
-        } catch {
-            return next(createError('Original blueprint file not found on disk', 404));
-        }
-
         const updated = await blueprintService.resetBlueprintForProcessing(blueprint.id);
+        const localFilePath = resolveUploadsPathFromUrl(blueprint.fileUrl);
+        const r2ObjectKey = getR2ObjectKeyFromMetadata(blueprint.metadata);
+
+        let filePath: string;
+        let fileName: string;
+        let cleanupSourceFile = false;
+
+        if (localFilePath) {
+            try {
+                await access(localFilePath);
+            } catch {
+                return next(createError('Original blueprint file not found on disk', 404));
+            }
+
+            filePath = localFilePath;
+            fileName = path.basename(localFilePath);
+        } else if (r2ObjectKey && blueprint.originalFileName) {
+            const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
+                r2ObjectKey,
+                blueprint.originalFileName,
+            );
+            filePath = downloadedFile.filePath;
+            fileName = downloadedFile.fileName;
+            cleanupSourceFile = true;
+        } else {
+            return next(createError('Original blueprint file could not be resolved for retry', 400));
+        }
 
         enqueuePdfBlueprintProcessing({
             blueprintId: blueprint.id,
             filePath,
-            fileName: path.basename(filePath),
+            fileName,
+            cleanupSourceFile,
         });
 
         res.status(202).json(updated);
@@ -287,9 +342,24 @@ export async function deleteBlueprint(req: Request, res: Response, next: NextFun
         await cleanupBlueprintFiles({
             fileUrl: blueprint.fileUrl,
             mimeType: blueprint.mimeType ?? null,
+            metadata: blueprint.metadata,
         });
 
         res.status(204).send();
+    } catch (error) {
+        next(error);
+    }
+}
+
+
+export async function getPreSignedUrl(req: Request, res: Response, next: NextFunction) {
+    try {
+        const payload = req.body as PresignedUploadRequest;
+        const result = await blueprintService.getPresignedUploadUrl(
+            payload.fileName,
+            payload.contentType,
+        );
+        res.json(result);
     } catch (error) {
         next(error);
     }
