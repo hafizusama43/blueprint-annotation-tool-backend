@@ -6,7 +6,7 @@ import { createError } from '../../middleware/error.middleware';
 import * as shapeService from './shape.service';
 
 const shapeSchema = z.object({
-    blueprintId: z.string().cuid(),
+    blueprintPageId: z.string().cuid(),
     type: z.nativeEnum(ShapeType),
     label: z.string().max(128).optional(),
     measurement: z.number().optional(),
@@ -44,9 +44,9 @@ export async function createShape(req: Request, res: Response, next: NextFunctio
         const payload = shapeSchema.parse(req.body);
 
         const createPayload: Prisma.ShapeCreateInput = {
-            blueprint: {
+            blueprintPage: {
                 connect: {
-                    id: payload.blueprintId,
+                    id: payload.blueprintPageId,
                 },
             },
             type: payload.type,

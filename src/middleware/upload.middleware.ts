@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import multer from 'multer';
 
-const uploadsDirectory = path.resolve(process.cwd(), 'uploads');
+export const uploadsDirectory = path.resolve(process.cwd(), 'uploads');
 
 if (!fs.existsSync(uploadsDirectory)) {
     fs.mkdirSync(uploadsDirectory, { recursive: true });

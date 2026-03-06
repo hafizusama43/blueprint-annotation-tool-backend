@@ -5,7 +5,7 @@ import { createError } from '../../middleware/error.middleware';
 import * as calibrationService from './calibration.service';
 
 const calibrationSchema = z.object({
-    blueprintId: z.string().cuid(),
+    blueprintPageId: z.string().cuid(),
     pixelsPerUnit: z.number().positive(),
     unit: z.string().min(1),
     referenceLabel: z.string().optional(),
@@ -41,9 +41,9 @@ export async function createCalibration(req: Request, res: Response, next: NextF
         const payload = calibrationSchema.parse(req.body);
 
         const createPayload: Prisma.CalibrationCreateInput = {
-            blueprint: {
+            blueprintPage: {
                 connect: {
-                    id: payload.blueprintId,
+                    id: payload.blueprintPageId,
                 },
             },
             pixelsPerUnit: payload.pixelsPerUnit,

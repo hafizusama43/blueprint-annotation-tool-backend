@@ -14,19 +14,39 @@ model Blueprint {
     originalFileName String?
     mimeType         String?
     fileSizeBytes    Int?
-    width            Int?
-    height           Int?
+    pageCount        Int      @default(0)
+    processingStatus BlueprintProcessingStatus @default(READY)
+    processingError  String?
+    processedAt      DateTime?
     metadata         Json?
     createdAt        DateTime @default(now())
     updatedAt        DateTime @updatedAt
 
+    pages BlueprintPage[]
+}
+
+model BlueprintPage {
+    id          String   @id @default(cuid())
+    blueprintId String
+    pageNumber  Int
+    imageUrl    String?
+    width       Int?
+    height      Int?
+    metadata    Json?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    blueprint    Blueprint     @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
     calibrations Calibration[]
     shapes       Shape[]
+
+    @@unique([blueprintId, pageNumber])
+    @@index([blueprintId])
 }
 
 model Calibration {
-    id             String   @id @default(cuid())
-    blueprintId    String
+    id              String   @id @default(cuid())
+    blueprintPageId String
     pixelsPerUnit  Float
     unit           String
     referenceLabel String?
@@ -35,12 +55,14 @@ model Calibration {
     createdAt      DateTime @default(now())
     updatedAt      DateTime @updatedAt
 
-    blueprint Blueprint @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
+    blueprintPage BlueprintPage @relation(fields: [blueprintPageId], references: [id], onDelete: Cascade)
+
+    @@index([blueprintPageId])
 }
 
 model Shape {
     id          String    @id @default(cuid())
-    blueprintId String
+    blueprintPageId String
     type        ShapeType
     label       String?
     measurement Float?
@@ -51,8 +73,10 @@ model Shape {
     createdAt   DateTime  @default(now())
     updatedAt   DateTime  @updatedAt
 
-    blueprint Blueprint    @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
-    points    ShapePoint[]
+    blueprintPage BlueprintPage @relation(fields: [blueprintPageId], references: [id], onDelete: Cascade)
+    points        ShapePoint[]
+
+    @@index([blueprintPageId])
 }
 
 model ShapePoint {
@@ -63,10 +87,19 @@ model ShapePoint {
     order   Int
 
     shape Shape @relation(fields: [shapeId], references: [id], onDelete: Cascade)
+
+    @@unique([shapeId, order])
+    @@index([shapeId])
 }
 
 enum ShapeType {
     LINE
     POLYLINE
     POLYGON
+}
+
+enum BlueprintProcessingStatus {
+    PROCESSING
+    READY
+    FAILED
 }
