@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
+import { MulterError } from 'multer';
 
 export interface AppError extends Error {
     statusCode?: number;
@@ -22,6 +23,22 @@ export function errorHandler(
         res.status(400).json({
             message: 'Validation error',
             details: err.errors,
+            requestId,
+        });
+        return;
+    }
+
+    if (err instanceof MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            res.status(413).json({
+                message: 'Uploaded file is too large. Max size is 350 MB.',
+                requestId,
+            });
+            return;
+        }
+
+        res.status(400).json({
+            message: err.message,
             requestId,
         });
         return;

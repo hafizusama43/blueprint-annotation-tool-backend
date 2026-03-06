@@ -2,6 +2,7 @@ import express, { Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import path from 'node:path';
 import blueprintRoutes from './modules/blueprint/blueprint.routes';
 import calibrationRoutes from './modules/calibration/calibration.routes';
 import shapeRoutes from './modules/shape/shape.routes';
@@ -34,6 +35,7 @@ export function createApp(): Express {
     );
     app.use(express.json({ limit: '10mb' }));
     app.use(express.urlencoded({ extended: false }));
+    app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
     app.use(morgan(env.NODE_ENV === 'development' ? 'dev' : 'tiny'));
     app.use(rateLimit({ windowMs: 15 * 60 * 1000, maxRequests: 250 }));
 

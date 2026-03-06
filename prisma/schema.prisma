@@ -7,15 +7,18 @@ datasource db {
 }
 
 model Blueprint {
-    id          String   @id @default(cuid())
-    name        String
-    description String?
-    fileUrl     String
-    width       Int?
-    height      Int?
-    metadata    Json?
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
+    id               String   @id @default(cuid())
+    name             String
+    description      String?
+    fileUrl          String
+    originalFileName String?
+    mimeType         String?
+    fileSizeBytes    Int?
+    width            Int?
+    height           Int?
+    metadata         Json?
+    createdAt        DateTime @default(now())
+    updatedAt        DateTime @updatedAt
 
     calibrations Calibration[]
     shapes       Shape[]
