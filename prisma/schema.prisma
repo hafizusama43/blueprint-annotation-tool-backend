@@ -1,0 +1,69 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+model Blueprint {
+    id          String   @id @default(cuid())
+    name        String
+    description String?
+    fileUrl     String
+    width       Int?
+    height      Int?
+    metadata    Json?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    calibrations Calibration[]
+    shapes       Shape[]
+}
+
+model Calibration {
+    id             String   @id @default(cuid())
+    blueprintId    String
+    pixelsPerUnit  Float
+    unit           String
+    referenceLabel String?
+    referenceStart Json?
+    referenceEnd   Json?
+    createdAt      DateTime @default(now())
+    updatedAt      DateTime @updatedAt
+
+    blueprint Blueprint @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
+}
+
+model Shape {
+    id          String    @id @default(cuid())
+    blueprintId String
+    type        ShapeType
+    label       String?
+    measurement Float?
+    unit        String?
+    fillColor   String?
+    strokeColor String?
+    metadata    Json?
+    createdAt   DateTime  @default(now())
+    updatedAt   DateTime  @updatedAt
+
+    blueprint Blueprint    @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
+    points    ShapePoint[]
+}
+
+model ShapePoint {
+    id      String @id @default(cuid())
+    shapeId String
+    x       Float
+    y       Float
+    order   Int
+
+    shape Shape @relation(fields: [shapeId], references: [id], onDelete: Cascade)
+}
+
+enum ShapeType {
+    LINE
+    POLYLINE
+    POLYGON
+}

@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "target": "ES2023",
+        "module": "CommonJS",
+        "rootDir": "src",
+        "outDir": "dist",
+        "strict": true,
+        "moduleResolution": "node",
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true,
+        "types": ["node"],
+        "resolveJsonModule": true,
+        "incremental": true,
+        "typeRoots": ["./src/types", "./node_modules/@types"]
+    },
+    "include": ["src"],
+    "exclude": ["node_modules", "dist"]
+}

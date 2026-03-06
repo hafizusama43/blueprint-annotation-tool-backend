@@ -1,0 +1,43 @@
+{
+    "name": "blueprint-annotation-tool-backend",
+    "version": "1.0.0",
+    "description": "Backend for the blueprint annotation canvas platform",
+    "license": "MIT",
+    "author": "",
+    "main": "dist/server.js",
+    "scripts": {
+        "dev": "ts-node-dev --respawn --transpile-only --clear src/server.ts",
+        "build": "tsc",
+        "start": "node dist/server.js",
+        "prisma:generate": "prisma generate",
+        "prisma:migrate": "prisma migrate dev",
+        "prisma:studio": "prisma studio",
+        "migrate:dev": "prisma migrate dev",
+        "format": "prettier --write \"src/**/*\" \"prisma/**/*\" \"*.json\" \"*.md\"",
+        "lint": "echo \"No lint configured\""
+    },
+    "dependencies": {
+        "@prisma/client": "^7.4.2",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.5",
+        "express": "^4.19.2",
+        "helmet": "^7.1.0",
+        "morgan": "^1.10.0",
+        "pg": "^8.20.0",
+        "zod": "^3.22.2"
+    },
+    "devDependencies": {
+        "@prisma/adapter-pg": "^7.4.2",
+        "@types/cors": "^2.8.17",
+        "@types/express": "^4.17.20",
+        "@types/helmet": "^4.0.0",
+        "@types/morgan": "^1.9.4",
+        "@types/node": "^22.5.2",
+        "@types/pg": "^8.18.0",
+        "prettier": "^3.0.0",
+        "prettier-plugin-prisma": "^4.0.0",
+        "prisma": "^7.4.2",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.4.9"
+    }
+}
