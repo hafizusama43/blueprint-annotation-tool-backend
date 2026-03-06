@@ -6,7 +6,7 @@ import blueprintRoutes from './modules/blueprint/blueprint.routes';
 import calibrationRoutes from './modules/calibration/calibration.routes';
 import shapeRoutes from './modules/shape/shape.routes';
 import shapePointRoutes from './modules/shapePoint/shapePoint.routes';
-import { env } from './config/env';
+import { env, validateEnv } from './config/env';
 import { rateLimit } from './middleware/rateLimit';
 import { errorHandler } from './middleware/error.middleware';
 import { requestId } from './middleware/requestId';
@@ -14,6 +14,8 @@ import { requestId } from './middleware/requestId';
 const apiPrefix = '/api/v1';
 
 export function createApp(): Express {
+    validateEnv();
+
     const app = express();
 
     if (env.NODE_ENV === 'production') {
