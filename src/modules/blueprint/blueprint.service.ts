@@ -1,9 +1,10 @@
 import { createWriteStream } from 'node:fs';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import type { Blueprint, BlueprintPage, BlueprintProcessingStatus, Prisma } from '@prisma/client';
+import { Upload } from '@aws-sdk/lib-storage';
 import {
     DeleteObjectCommand,
     DeleteObjectsCommand,
@@ -222,6 +223,8 @@ export async function deleteBlueprintById(id: string): Promise<BlueprintWithPage
 }
 
 const PRESIGNED_EXPIRES_IN_SECONDS = 3600; // 1 hour
+const R2_UPLOAD_MAX_ATTEMPTS = 4;
+const R2_UPLOAD_BASE_RETRY_DELAY_MS = 400;
 
 function sanitizeFileName(fileName: string): string {
     const base = fileName
@@ -239,6 +242,55 @@ function buildObjectKey(fileName: string): string {
 
 function buildPublicFileUrl(key: string): string | null {
     return R2_PUBLIC_BASE_URL ? `${R2_PUBLIC_BASE_URL.replace(/\/$/, '')}/${key}` : null;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getUploadRetryDelayMs(attempt: number): number {
+    const jitter = Math.floor(Math.random() * 200);
+    return R2_UPLOAD_BASE_RETRY_DELAY_MS * 2 ** (attempt - 1) + jitter;
+}
+
+function isRetryableUploadError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+        return false;
+    }
+
+    const err = error as {
+        code?: string;
+        name?: string;
+        Code?: string;
+        $retryable?: unknown;
+        $metadata?: { httpStatusCode?: number };
+    };
+    const statusCode = err.$metadata?.httpStatusCode;
+
+    if (typeof statusCode === 'number' && statusCode >= 500) {
+        return true;
+    }
+
+    if (err.$retryable) {
+        return true;
+    }
+
+    const code = err.code ?? err.Code ?? err.name;
+    if (!code) {
+        return false;
+    }
+
+    return [
+        'InternalError',
+        'SlowDown',
+        'ServiceUnavailable',
+        'RequestTimeout',
+        'TimeoutError',
+        'NetworkingError',
+        'ECONNRESET',
+        'ECONNREFUSED',
+        'EPIPE',
+    ].includes(code);
 }
 
 function buildLocalUploadFileName(originalFileName: string): string {
@@ -396,16 +448,40 @@ export async function uploadFileToR2(
         throw createError('CF_R2_PUBLIC_BASE_URL must be configured to upload page images', 500);
     }
 
-    await r2Client.send(
-        new PutObjectCommand({
-            Bucket: R2_BUCKET,
-            Key: key,
-            Body: createReadStream(localFilePath),
-            ContentType: contentType,
-        }),
-    );
+    const { size } = await stat(localFilePath);
+    let lastError: unknown;
 
-    return fileUrl;
+    for (let attempt = 1; attempt <= R2_UPLOAD_MAX_ATTEMPTS; attempt += 1) {
+        try {
+            const upload = new Upload({
+                client: r2Client,
+                params: {
+                    Bucket: R2_BUCKET,
+                    Key: key,
+                    Body: createReadStream(localFilePath),
+                    ContentType: contentType,
+                    ContentLength: size,
+                },
+                queueSize: 1,
+                leavePartsOnError: false,
+            });
+
+            await upload.done();
+            return fileUrl;
+        } catch (error) {
+            lastError = error;
+            const shouldRetry =
+                attempt < R2_UPLOAD_MAX_ATTEMPTS && isRetryableUploadError(error);
+
+            if (!shouldRetry) {
+                throw error;
+            }
+
+            await sleep(getUploadRetryDelayMs(attempt));
+        }
+    }
+
+    throw createError('Failed to upload file to R2 after retries', 502, lastError);
 }
 
 export async function deleteR2ObjectsByPrefix(prefix: string): Promise<void> {
