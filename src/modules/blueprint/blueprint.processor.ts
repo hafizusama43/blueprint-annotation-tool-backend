@@ -13,7 +13,8 @@ type ProcessingJob = {
 };
 
 type PageAsset = {
-    imageUrl: string | null;
+    imagePath: string;
+    imageName: string;
     width?: number | null;
     height?: number | null;
 };
@@ -30,12 +31,14 @@ function getPdfPageDirectoryPath(fileName: string): string {
 async function renderPdfPagesToImages(filePath: string, fileName: string): Promise<PageAsset[]> {
     const pageDirectoryName = getPdfPageDirectoryName(fileName);
     const pageDirectoryPath = getPdfPageDirectoryPath(fileName);
+    const pageDirectoryRelativePath = path.join('uploads', pageDirectoryName);
 
     await mkdir(pageDirectoryPath, { recursive: true });
 
     try {
         const renderedPages = await pdfToPng(filePath, {
-            outputFolder: pageDirectoryPath,
+            // pdf-to-png-converter resolves outputFolder from cwd; use relative path.
+            outputFolder: pageDirectoryRelativePath,
             outputFileMaskFunc: (pageNumber) => `page-${pageNumber}.png`,
             returnPageContent: false,
             viewportScale: 1.5,
@@ -44,7 +47,8 @@ async function renderPdfPagesToImages(filePath: string, fileName: string): Promi
         });
 
         return renderedPages.map((page: PngPageOutput) => ({
-            imageUrl: `/uploads/${pageDirectoryName}/${page.name}`,
+            imagePath: path.join(pageDirectoryPath, page.name),
+            imageName: page.name,
             width: page.width,
             height: page.height,
         }));
@@ -54,7 +58,13 @@ async function renderPdfPagesToImages(filePath: string, fileName: string): Promi
     }
 }
 
-function buildBlueprintPages(pages: PageAsset[]): Prisma.BlueprintPageCreateManyBlueprintInput[] {
+function buildBlueprintPages(
+    pages: Array<{
+        imageUrl: string;
+        width?: number | null;
+        height?: number | null;
+    }>,
+): Prisma.BlueprintPageCreateManyBlueprintInput[] {
     return pages.map((page, index) => ({
         pageNumber: index + 1,
         imageUrl: page.imageUrl,
@@ -66,12 +76,41 @@ function buildBlueprintPages(pages: PageAsset[]): Prisma.BlueprintPageCreateMany
 export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
     setImmediate(async () => {
         try {
+            await blueprintService.updateBlueprint(job.blueprintId, {
+                processingStatus: 'PROCESSING',
+                processingError: null,
+                processedAt: null,
+            });
+
             const pageAssets = await renderPdfPagesToImages(job.filePath, job.fileName);
+
+            const uploadedPages = await Promise.all(
+                pageAssets.map(async (pageAsset) => {
+                    const objectKey = blueprintService.buildBlueprintPageImageKey(
+                        job.blueprintId,
+                        pageAsset.imageName,
+                    );
+
+                    const imageUrl = await blueprintService.uploadFileToR2(
+                        objectKey,
+                        pageAsset.imagePath,
+                        'image/png',
+                    );
+
+                    return {
+                        imageUrl,
+                        width: pageAsset.width ?? null,
+                        height: pageAsset.height ?? null,
+                    };
+                }),
+            );
+
             await blueprintService.replaceBlueprintPagesAndMarkReady(
                 job.blueprintId,
-                buildBlueprintPages(pageAssets),
+                buildBlueprintPages(uploadedPages),
             );
         } catch (error) {
+            console.error('Error processing PDF', error);
             await rm(getPdfPageDirectoryPath(job.fileName), { recursive: true, force: true });
 
             const message = error instanceof Error ? error.message : 'Unknown PDF processing error';
@@ -86,6 +125,7 @@ export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
                 console.error('Failed to update blueprint processing status', updateError);
             }
         } finally {
+            await rm(getPdfPageDirectoryPath(job.fileName), { recursive: true, force: true });
             if (job.cleanupSourceFile) {
                 await rm(job.filePath, { force: true });
             }

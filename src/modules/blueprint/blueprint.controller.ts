@@ -106,6 +106,7 @@ function getPdfPagesDirectoryPathFromFileUrl(fileUrl: string): string | null {
 }
 
 async function cleanupBlueprintFiles(blueprint: {
+    id: string;
     fileUrl: string;
     mimeType: string | null;
     metadata: Prisma.JsonValue | null;
@@ -129,6 +130,12 @@ async function cleanupBlueprintFiles(blueprint: {
     }
 
     if (blueprint.mimeType === 'application/pdf') {
+        try {
+            await blueprintService.deleteR2ObjectsByPrefix(`images/${blueprint.id}/`);
+        } catch (error) {
+            console.error('Failed to delete blueprint page images from R2', error);
+        }
+
         const pdfPagesDirectoryPath = getPdfPagesDirectoryPathFromFileUrl(blueprint.fileUrl);
         if (pdfPagesDirectoryPath) {
             try {
@@ -243,7 +250,7 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
             fileSizeBytes: r2Object.fileSizeBytes,
             pageCount: isPdf ? 0 : 1,
             processingStatus: isPdf
-                ? BlueprintProcessingStatus.PROCESSING
+                ? BlueprintProcessingStatus.PENDING
                 : BlueprintProcessingStatus.READY,
             processedAt: isPdf ? null : new Date(),
             metadata: attachR2Metadata(metadata, payload.key),
@@ -251,19 +258,19 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
 
         const created = await blueprintService.createBlueprint(createPayload);
 
-        // if (isPdf) {
-        //     const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
-        //         payload.key,
-        //         payload.originalFileName,
-        //     );
+        if (isPdf) {
+            const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
+                payload.key,
+                payload.originalFileName,
+            );
 
-        //     enqueuePdfBlueprintProcessing({
-        //         blueprintId: created.id,
-        //         filePath: downloadedFile.filePath,
-        //         fileName: downloadedFile.fileName,
-        //         cleanupSourceFile: true,
-        //     });
-        // }
+            enqueuePdfBlueprintProcessing({
+                blueprintId: created.id,
+                filePath: downloadedFile.filePath,
+                fileName: downloadedFile.fileName,
+                cleanupSourceFile: true,
+            });
+        }
 
         res.status(isPdf ? 202 : 201).json(created);
     } catch (error) {
@@ -287,24 +294,14 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
             return next(createError('Blueprint is already being processed', 409));
         }
 
-        const updated = await blueprintService.resetBlueprintForProcessing(blueprint.id);
-        const localFilePath = resolveUploadsPathFromUrl(blueprint.fileUrl);
+        // const updated = await blueprintService.resetBlueprintForProcessing(blueprint.id);
         const r2ObjectKey = getR2ObjectKeyFromMetadata(blueprint.metadata);
 
         let filePath: string;
         let fileName: string;
         let cleanupSourceFile = false;
 
-        if (localFilePath) {
-            try {
-                await access(localFilePath);
-            } catch {
-                return next(createError('Original blueprint file not found on disk', 404));
-            }
-
-            filePath = localFilePath;
-            fileName = path.basename(localFilePath);
-        } else if (r2ObjectKey && blueprint.originalFileName) {
+        if (r2ObjectKey && blueprint.originalFileName) {
             const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
                 r2ObjectKey,
                 blueprint.originalFileName,
@@ -325,7 +322,7 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
             cleanupSourceFile,
         });
 
-        res.status(202).json(updated);
+        res.status(202).json({ message: 'Blueprint processing started' });
     } catch (error) {
         next(error);
     }
@@ -342,6 +339,7 @@ export async function deleteBlueprint(req: Request, res: Response, next: NextFun
 
         // Best-effort cleanup for original upload and generated page images.
         await cleanupBlueprintFiles({
+            id: blueprint.id,
             fileUrl: blueprint.fileUrl,
             mimeType: blueprint.mimeType ?? null,
             metadata: blueprint.metadata,

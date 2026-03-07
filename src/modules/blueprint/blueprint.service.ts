@@ -1,12 +1,15 @@
 import { createWriteStream } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
+import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import type { Blueprint, BlueprintPage, BlueprintProcessingStatus, Prisma } from '@prisma/client';
 import {
     DeleteObjectCommand,
+    DeleteObjectsCommand,
     GetObjectCommand,
     HeadObjectCommand,
+    ListObjectsV2Command,
     PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -24,16 +27,65 @@ export type BlueprintStatus = Pick<
     'id' | 'processingStatus' | 'processingError' | 'processedAt' | 'pageCount' | 'updatedAt'
 >;
 
+function normalizePublicUrl(url: string | null): string | null {
+    if (!url || !R2_PUBLIC_BASE_URL) {
+        return url;
+    }
+
+    try {
+        const configuredBase = new URL('https://pub-5a5d61ecb84741ba9f41b8310be99555.r2.dev');
+        const parsed = new URL(url);
+        const isKnownR2Host =
+            parsed.hostname.endsWith('.r2.cloudflarestorage.com') ||
+            parsed.hostname.endsWith('.r2.dev');
+
+        if (!isKnownR2Host) {
+            return url;
+        }
+
+        const normalizedPath = parsed.pathname.replace(/^\/+/, '');
+        return `${configuredBase.toString().replace(/\/$/, '')}/${normalizedPath}`;
+    } catch {
+        return url;
+    }
+}
+
+function normalizeBlueprintPublicUrls<T extends Blueprint>(blueprint: T): T {
+    return {
+        ...blueprint,
+        fileUrl: normalizePublicUrl(blueprint.fileUrl) ?? blueprint.fileUrl,
+    };
+}
+
+function normalizeBlueprintWithPagesPublicUrls(blueprint: BlueprintWithPages): BlueprintWithPages {
+    return {
+        ...normalizeBlueprintPublicUrls(blueprint),
+        pages: blueprint.pages.map((page) => ({
+            ...page,
+            imageUrl: normalizePublicUrl(page.imageUrl),
+        })),
+    };
+}
+
 export async function getAllBlueprints(): Promise<Blueprint[]> {
-    return prisma.blueprint.findMany({
+    const blueprints = await prisma.blueprint.findMany({
         orderBy: {
             createdAt: 'desc',
         },
+        // include: {
+        //     pages: {
+        //         orderBy: {
+        //             pageNumber: 'asc',
+        //         },
+        //     },
+        // },
     });
+
+    return blueprints.map((blueprint) => normalizeBlueprintPublicUrls(blueprint));
 }
 
 export async function getBlueprintById(id: string): Promise<BlueprintWithPages | null> {
-    return prisma.blueprint.findUnique({
+    const blueprint = await prisma.blueprint.findUnique({
         where: { id },
         include: {
             pages: {
@@ -43,6 +95,8 @@ export async function getBlueprintById(id: string): Promise<BlueprintWithPages |
             },
         },
     });
+
+    return blueprint ? normalizeBlueprintWithPagesPublicUrls(blueprint) : null;
 }
 
 export async function getBlueprintStatusById(id: string): Promise<BlueprintStatus | null> {
@@ -221,6 +275,12 @@ export type DownloadedR2Object = {
     fileName: string;
 };
 
+export type UploadedBlueprintPageImage = {
+    imageUrl: string;
+    width: number | null;
+    height: number | null;
+};
+
 export async function getPresignedUploadUrl(
     fileName: string,
     contentType?: string,
@@ -312,4 +372,62 @@ export async function deleteR2Object(key: string): Promise<void> {
             Key: key,
         }),
     );
+}
+
+export function buildBlueprintPageImageKey(blueprintId: string, pageFileName: string): string {
+    return `images/${blueprintId}/${pageFileName}`;
+}
+
+export async function uploadFileToR2(
+    key: string,
+    localFilePath: string,
+    contentType: string,
+): Promise<string> {
+    const fileUrl = buildPublicFileUrl(key);
+    if (!fileUrl) {
+        throw createError('CF_R2_PUBLIC_BASE_URL must be configured to upload page images', 500);
+    }
+
+    await r2Client.send(
+        new PutObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: key,
+            Body: createReadStream(localFilePath),
+            ContentType: contentType,
+        }),
+    );
+
+    return fileUrl;
+}
+
+export async function deleteR2ObjectsByPrefix(prefix: string): Promise<void> {
+    let continuationToken: string | undefined;
+
+    do {
+        const page = await r2Client.send(
+            new ListObjectsV2Command({
+                Bucket: R2_BUCKET,
+                Prefix: prefix,
+                ContinuationToken: continuationToken,
+            }),
+        );
+
+        const keys = (page.Contents ?? [])
+            .map((item) => item.Key)
+            .filter((key): key is string => Boolean(key));
+
+        if (keys.length > 0) {
+            await r2Client.send(
+                new DeleteObjectsCommand({
+                    Bucket: R2_BUCKET,
+                    Delete: {
+                        Objects: keys.map((key) => ({ Key: key })),
+                        Quiet: true,
+                    },
+                }),
+            );
+        }
+
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
 }
