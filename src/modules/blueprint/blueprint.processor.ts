@@ -1,7 +1,8 @@
 import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import type { BlueprintPage, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 import { pdfToPng, type PngPageOutput } from 'pdf-to-png-converter';
+import sharp from 'sharp';
 import { uploadsDirectory } from '../../middleware/upload.middleware';
 import * as blueprintService from './blueprint.service';
 
@@ -15,9 +16,16 @@ type ProcessingJob = {
 type PageAsset = {
     imagePath: string;
     imageName: string;
+    thumbnailPath: string;
+    thumbnailName: string;
     width?: number | null;
     height?: number | null;
 };
+
+const PAGE_UPLOAD_CONCURRENCY = 8;
+const THUMBNAIL_WIDTH = 320;
+const THUMBNAIL_QUALITY = 70;
+const THUMBNAIL_SUFFIX = '-thumb.webp';
 
 function getPdfPageDirectoryName(fileName: string): string {
     const fileBaseName = path.basename(fileName, path.extname(fileName));
@@ -46,12 +54,37 @@ async function renderPdfPagesToImages(filePath: string, fileName: string): Promi
             concurrencyLimit: 2,
         });
 
-        return renderedPages.map((page: PngPageOutput) => ({
-            imagePath: path.join(pageDirectoryPath, page.name),
-            imageName: page.name,
-            width: page.width,
-            height: page.height,
-        }));
+        const pageAssets = await Promise.all(
+            renderedPages.map(async (page: PngPageOutput) => {
+                const imagePath = path.join(pageDirectoryPath, page.name);
+                const pageBaseName = path.parse(page.name).name;
+                const thumbnailName = `${pageBaseName}${THUMBNAIL_SUFFIX}`;
+                const thumbnailPath = path.join(pageDirectoryPath, thumbnailName);
+
+                await sharp(imagePath)
+                    .rotate()
+                    .resize({
+                        width: THUMBNAIL_WIDTH,
+                        fit: 'inside',
+                        withoutEnlargement: true,
+                    })
+                    .webp({
+                        quality: THUMBNAIL_QUALITY,
+                    })
+                    .toFile(thumbnailPath);
+
+                return {
+                    imagePath,
+                    imageName: page.name,
+                    thumbnailPath,
+                    thumbnailName,
+                    width: page.width,
+                    height: page.height,
+                };
+            }),
+        );
+
+        return pageAssets;
     } catch (error) {
         await rm(pageDirectoryPath, { recursive: true, force: true });
         throw error;
@@ -61,6 +94,7 @@ async function renderPdfPagesToImages(filePath: string, fileName: string): Promi
 function buildBlueprintPages(
     pages: Array<{
         imageUrl: string;
+        thumbnailUrl: string;
         width?: number | null;
         height?: number | null;
     }>,
@@ -68,9 +102,59 @@ function buildBlueprintPages(
     return pages.map((page, index) => ({
         pageNumber: index + 1,
         imageUrl: page.imageUrl,
+        thumbnailUrl: page.thumbnailUrl,
         width: page.width ?? null,
         height: page.height ?? null,
     }));
+}
+
+async function uploadPagesToR2InBatches(
+    blueprintId: string,
+    pageAssets: PageAsset[],
+): Promise<Array<{ imageUrl: string; thumbnailUrl: string; width: number | null; height: number | null }>> {
+    const uploadedPages: Array<{
+        imageUrl: string;
+        thumbnailUrl: string;
+        width: number | null;
+        height: number | null;
+    }> = new Array(pageAssets.length);
+    let currentIndex = 0;
+
+    async function worker(): Promise<void> {
+        while (true) {
+            const index = currentIndex++;
+            if (index >= pageAssets.length) {
+                return;
+            }
+
+            const pageAsset = pageAssets[index];
+            const objectKey = blueprintService.buildBlueprintPageImageKey(
+                blueprintId,
+                pageAsset.imageName,
+            );
+            const thumbnailKey = blueprintService.buildBlueprintPageThumbnailKey(
+                blueprintId,
+                pageAsset.thumbnailName,
+            );
+
+            const [imageUrl, thumbnailUrl] = await Promise.all([
+                blueprintService.uploadFileToR2(objectKey, pageAsset.imagePath, 'image/png'),
+                blueprintService.uploadFileToR2(thumbnailKey, pageAsset.thumbnailPath, 'image/webp'),
+            ]);
+
+            uploadedPages[index] = {
+                imageUrl,
+                thumbnailUrl,
+                width: pageAsset.width ?? null,
+                height: pageAsset.height ?? null,
+            };
+        }
+    }
+
+    const workerCount = Math.min(PAGE_UPLOAD_CONCURRENCY, pageAssets.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    return uploadedPages;
 }
 
 export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
@@ -83,27 +167,7 @@ export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
             });
 
             const pageAssets = await renderPdfPagesToImages(job.filePath, job.fileName);
-
-            const uploadedPages = await Promise.all(
-                pageAssets.map(async (pageAsset) => {
-                    const objectKey = blueprintService.buildBlueprintPageImageKey(
-                        job.blueprintId,
-                        pageAsset.imageName,
-                    );
-
-                    const imageUrl = await blueprintService.uploadFileToR2(
-                        objectKey,
-                        pageAsset.imagePath,
-                        'image/png',
-                    );
-
-                    return {
-                        imageUrl,
-                        width: pageAsset.width ?? null,
-                        height: pageAsset.height ?? null,
-                    };
-                }),
-            );
+            const uploadedPages = await uploadPagesToR2InBatches(job.blueprintId, pageAssets);
 
             await blueprintService.replaceBlueprintPagesAndMarkReady(
                 job.blueprintId,

@@ -63,6 +63,7 @@ function normalizeBlueprintWithPagesPublicUrls(blueprint: BlueprintWithPages): B
         pages: blueprint.pages.map((page) => ({
             ...page,
             imageUrl: normalizePublicUrl(page.imageUrl),
+            thumbnailUrl: normalizePublicUrl(page.thumbnailUrl),
         })),
     };
 }
@@ -376,6 +377,13 @@ export async function deleteR2Object(key: string): Promise<void> {
 
 export function buildBlueprintPageImageKey(blueprintId: string, pageFileName: string): string {
     return `images/${blueprintId}/${pageFileName}`;
+}
+
+export function buildBlueprintPageThumbnailKey(
+    blueprintId: string,
+    thumbnailFileName: string,
+): string {
+    return `thumbnails/${blueprintId}/${thumbnailFileName}`;
 }
 
 export async function uploadFileToR2(

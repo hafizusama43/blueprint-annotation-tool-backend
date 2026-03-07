@@ -30,6 +30,7 @@ model BlueprintPage {
     blueprintId String
     pageNumber  Int
     imageUrl    String?
+    thumbnailUrl String?
     width       Int?
     height      Int?
     metadata    Json?

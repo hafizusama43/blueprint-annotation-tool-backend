@@ -136,6 +136,12 @@ async function cleanupBlueprintFiles(blueprint: {
             console.error('Failed to delete blueprint page images from R2', error);
         }
 
+        try {
+            await blueprintService.deleteR2ObjectsByPrefix(`thumbnails/${blueprint.id}/`);
+        } catch (error) {
+            console.error('Failed to delete blueprint page thumbnails from R2', error);
+        }
+
         const pdfPagesDirectoryPath = getPdfPagesDirectoryPathFromFileUrl(blueprint.fileUrl);
         if (pdfPagesDirectoryPath) {
             try {
@@ -150,6 +156,7 @@ async function cleanupBlueprintFiles(blueprint: {
 function buildBlueprintPages(
     pages: Array<{
         imageUrl: string | null;
+        thumbnailUrl?: string | null;
         width?: number | null;
         height?: number | null;
     }>,
@@ -157,6 +164,7 @@ function buildBlueprintPages(
     return pages.map((page, index) => ({
         pageNumber: index + 1,
         imageUrl: page.imageUrl,
+        thumbnailUrl: page.thumbnailUrl ?? null,
         width: page.width ?? null,
         height: page.height ?? null,
     }));
@@ -217,6 +225,7 @@ export async function createBlueprint(req: Request, res: Response, next: NextFun
                 create: buildBlueprintPages(
                     Array.from({ length: payload.pageCount ?? 1 }, () => ({
                         imageUrl: (payload.pageCount ?? 1) === 1 ? payload.fileUrl : null,
+                        thumbnailUrl: (payload.pageCount ?? 1) === 1 ? payload.fileUrl : null,
                     })),
                 ),
             },
@@ -258,19 +267,19 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
 
         const created = await blueprintService.createBlueprint(createPayload);
 
-        if (isPdf) {
-            const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
-                payload.key,
-                payload.originalFileName,
-            );
+        // if (isPdf) {
+        //     const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
+        //         payload.key,
+        //         payload.originalFileName,
+        //     );
 
-            enqueuePdfBlueprintProcessing({
-                blueprintId: created.id,
-                filePath: downloadedFile.filePath,
-                fileName: downloadedFile.fileName,
-                cleanupSourceFile: true,
-            });
-        }
+        //     enqueuePdfBlueprintProcessing({
+        //         blueprintId: created.id,
+        //         filePath: downloadedFile.filePath,
+        //         fileName: downloadedFile.fileName,
+        //         cleanupSourceFile: true,
+        //     });
+        // }
 
         res.status(isPdf ? 202 : 201).json(created);
     } catch (error) {
@@ -279,6 +288,83 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
 }
 
 export async function retryBlueprintProcessing(req: Request, res: Response, next: NextFunction) {
+    const blueprintIdFromBody =
+        req.body && typeof req.body.id === 'string' ? req.body.id : undefined;
+    const blueprintId = req.params.id || blueprintIdFromBody;
+
+    if (!blueprintId) {
+        return next(createError('Blueprint id is required', 400));
+    }
+
+    // await blueprintService.updateBlueprint(blueprintId, {
+    //     processingStatus: BlueprintProcessingStatus.PROCESSING,
+    //     processingError: null,
+    //     processedAt: null,
+    // });
+    
+    res.status(202).json({
+        message: 'Blueprint processing queued',
+        blueprintId,
+    });
+
+    // Fire-and-forget: queue processing after returning response.
+    void (async () => {
+        try {
+            const blueprint = await blueprintService.getBlueprintById(blueprintId);
+
+            if (!blueprint) {
+                throw createError('Blueprint not found', 404);
+            }
+
+            if (blueprint.mimeType !== 'application/pdf') {
+                throw createError('Only PDF blueprints can be reprocessed', 400);
+            }
+
+            if (blueprint.processingStatus === BlueprintProcessingStatus.PROCESSING) {
+                return;
+            }
+
+            await blueprintService.resetBlueprintForProcessing(blueprint.id);
+            const r2ObjectKey = getR2ObjectKeyFromMetadata(blueprint.metadata);
+
+            if (!(r2ObjectKey && blueprint.originalFileName)) {
+                throw createError('Original blueprint file could not be resolved for retry', 400);
+            }
+
+            const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
+                r2ObjectKey,
+                blueprint.originalFileName,
+            );
+
+            enqueuePdfBlueprintProcessing({
+                blueprintId: blueprint.id,
+                filePath: downloadedFile.filePath,
+                fileName: downloadedFile.fileName,
+                cleanupSourceFile: true,
+            });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown processing error';
+            console.error(`Failed to queue blueprint processing for id ${blueprintId}`, error);
+
+            try {
+                await blueprintService.updateBlueprint(blueprintId, {
+                    pageCount: 0,
+                    processingStatus: BlueprintProcessingStatus.FAILED,
+                    processingError: errorMessage,
+                    processedAt: null,
+                });
+            } catch (updateError) {
+                console.error('Failed to mark blueprint processing as failed', updateError);
+            }
+        }
+    })();
+}
+
+export async function retryBlueprintProcessingAndWait(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+) {
     try {
         const blueprint = await blueprintService.getBlueprintById(req.params.id);
 
@@ -294,7 +380,7 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
             return next(createError('Blueprint is already being processed', 409));
         }
 
-        // const updated = await blueprintService.resetBlueprintForProcessing(blueprint.id);
+        const updated = await blueprintService.resetBlueprintForProcessing(blueprint.id);
         const r2ObjectKey = getR2ObjectKeyFromMetadata(blueprint.metadata);
 
         let filePath: string;
