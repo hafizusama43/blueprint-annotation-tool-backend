@@ -1,60 +1,81 @@
-# Blueprint Annotation Backend
+# Blueprint Annotation Canvas - Backend
 
-Backend for the assignment described in the Full-Stack Lead Developer technical assessment. This service exposes a minimal REST API for managing blueprint metadata, enforces security defaults, and stitches together rate limiting, request tracing, and Prisma-backed persistence.
+Backend service for the technical assignment.  
+This API handles blueprint ingestion, processing, and persistence for calibration + measurement annotations.
 
-## Getting started
+## Setup Instructions
 
-1. Copy `.env.example` to `.env` and populate the secrets (PostgreSQL URL, JWT secrets, etc.).
-2. Install dependencies:
-    ```bash
-    npm install
-    ```
-3. Format the tracked files (optional but recommended):
-    ```bash
-    npm run format
-    ```
-4. Generate Prisma client + run migrations:
-    ```bash
-    npm run prisma:generate
-    npm run prisma:migrate
-    ```
-5. Start the development server:
-    ```bash
-    npm run dev
-    ```
+### Prerequisites
+- Node.js 20+
+- PostgreSQL running and reachable
+- Cloudflare R2 bucket configured
 
-The `dev` script launches `ts-node-dev` so changes reload immediately. The compiled artifacts are emitted to `dist/` when running `npm run build`.
+### Environment
+Create `.env` with the required values used by `src/config/env.ts` (database URL, app config, and R2 credentials/public URL).
 
-## Architecture overview
+### Run (assignment quick start)
+```bash
+npm install && npm run dev
+```
 
-- **Entry point**: `src/server.ts` bootstraps the Express app using `createApp` and reads port/config from `src/config/env`.
-- **Modules**: `src/modules/blueprint` contains controller/service layers that talk to Prisma. The controller validates payloads with `zod` before delegating to `BlueprintService`.
-- **Persistence**: Prisma models under `prisma/schema.prisma` describe a `Blueprint` record storing measurement metadata, while `src/config/prisma.ts` reuses a singleton client so development servers stay performant.
-- **Middleware stack**:
-    - `helmet`, `cors`, and `morgan` for basic security and telemetry,
-    - `requestId` attaches a traceable ID to every request,
-    - `rateLimit` keeps abusive clients in check,
-    - `errorHandler` centralizes Zod/Prisma/custom errors and always returns a structured JSON payload.
+This starts the backend in watch mode via `ts-node-dev`.
 
-## API
+### First-time database setup (only once per new DB)
+```bash
+npm run prisma:generate
+npm run prisma:migrate
+```
 
-| Verb                         | Path | Description                                                                       |
-| ---------------------------- | ---- | --------------------------------------------------------------------------------- |
-| `GET /api/v1`                |      | Basic health/info endpoint                                                        |
-| `GET /api/v1/blueprints`     |      | List all blueprint metadata                                                       |
-| `GET /api/v1/blueprints/:id` |      | Load a single blueprint by ID                                                     |
-| `POST /api/v1/blueprints`    |      | Create a blueprint (name/type required, optional measurement/unit/label/metadata) |
+## Brief Architecture Overview
 
-The controller returns `400` for schema violations and `409`/`404` errors for Prisma issues thanks to the shared error handler.
+### Module Structure
+- `src/modules/blueprint`: upload finalization, processing status, retry flow, and cleanup.
+- `src/modules/calibration`: scale calibration persistence (`pixelsPerUnit`, unit, reference metadata).
+- `src/modules/shape`: shape metadata persistence (`LINE`, `POLYLINE`, `POLYGON`, label, measurement/unit, style).
+- `src/modules/shapePoint`: ordered point persistence for geometry vertices.
 
-## Known limitations
+### Layering
+- **Routes** define endpoints and mount controller handlers.
+- **Controllers** validate requests (Zod) and map HTTP concerns to service calls.
+- **Services** handle Prisma persistence + Cloudflare R2 operations.
+- **Processor** runs async file workflows:
+  - PDF -> per-page PNG + thumbnail generation -> R2 upload
+  - Image -> normalized page + thumbnail -> R2 upload
 
-- No authentication/authorization yet — any client with network access can read/write blueprint metadata.
-- The rate limiter is in-memory and resets with each process restart; for horizontal scaling, replace it with Redis/Cluster.
-- The Prisma model is intentionally narrow for the assignment scope; richer canvas data (points, annotations) should live in a dedicated table or object storage.
+### Data/State Management Decisions
+For backend state management, the decision was to keep server state persistence-first in PostgreSQL (via Prisma) and treat processing as a finite state machine:
+- `PENDING` -> `PROCESSING` -> `READY` or `FAILED`
 
-## Next steps
+This gives deterministic status polling for the frontend and keeps business state centralized in DB instead of in-memory process state.  
+Transient job work (temp files, conversion artifacts) is intentionally short-lived and cleaned up after processing.
 
-- Wire this API to the React canvas UI described in the assignment prompt.
-- Implement authentication tokens and per-user data isolation.
-- Add request/response logging plus structured metrics (e.g., via OpenTelemetry) when needed.
+## Core API Surface
+
+- `GET /api/v1/blueprints`
+- `GET /api/v1/blueprints/:id`
+- `GET /api/v1/blueprints/:id/status`
+- `POST /api/v1/blueprints/presigned-upload-url`
+- `POST /api/v1/blueprints/upload`
+- `PUT /api/v1/blueprints/:id/process`
+- `DELETE /api/v1/blueprints/:id`
+- `GET /api/v1/calibrations`, `POST /api/v1/calibrations`
+- `GET /api/v1/shapes`, `POST /api/v1/shapes`
+- `GET /api/v1/shape-points`, `POST /api/v1/shape-points`
+
+## Known Limitations and Trade-offs
+
+- No auth/authorization yet; endpoints are not user-isolated.
+- Processing currently runs in-process (`setImmediate`) rather than a durable external queue.
+- Shape/calibration APIs currently focus on create/read; full update/delete/bulk edit flows are limited.
+- Measurement correctness is trusted from the client side; server-side recalculation/verification is minimal.
+- In-memory rate limiting is simple and fast for assignment scope, but not ideal for multi-instance scaling.
+- Large-file processing is optimized for practical use, but advanced observability (metrics/tracing) is still pending.
+
+## Scripts
+
+- `npm run dev` - run backend in development mode
+- `npm run build` - compile TypeScript to `dist`
+- `npm run start` - run compiled build
+- `npm run prisma:generate` - generate Prisma client
+- `npm run prisma:migrate` - run DB migrations
+- `npm run prisma:studio` - open Prisma Studio
