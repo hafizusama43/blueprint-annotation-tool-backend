@@ -4,7 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { BlueprintProcessingStatus, type Prisma } from '@prisma/client';
 import * as blueprintService from './blueprint.service';
 import { createError } from '../../middleware/error.middleware';
-import { enqueuePdfBlueprintProcessing } from './blueprint.processor';
+import { enqueueImageBlueprintProcessing, enqueuePdfBlueprintProcessing } from './blueprint.processor';
 import { uploadsDirectory } from '../../middleware/upload.middleware';
 import {
     blueprintSchema,
@@ -129,19 +129,19 @@ async function cleanupBlueprintFiles(blueprint: {
         }
     }
 
+    try {
+        await blueprintService.deleteR2ObjectsByPrefix(`images/${blueprint.id}/`);
+    } catch (error) {
+        console.error('Failed to delete blueprint page images from R2', error);
+    }
+
+    try {
+        await blueprintService.deleteR2ObjectsByPrefix(`thumbnails/${blueprint.id}/`);
+    } catch (error) {
+        console.error('Failed to delete blueprint page thumbnails from R2', error);
+    }
+
     if (blueprint.mimeType === 'application/pdf') {
-        try {
-            await blueprintService.deleteR2ObjectsByPrefix(`images/${blueprint.id}/`);
-        } catch (error) {
-            console.error('Failed to delete blueprint page images from R2', error);
-        }
-
-        try {
-            await blueprintService.deleteR2ObjectsByPrefix(`thumbnails/${blueprint.id}/`);
-        } catch (error) {
-            console.error('Failed to delete blueprint page thumbnails from R2', error);
-        }
-
         const pdfPagesDirectoryPath = getPdfPagesDirectoryPathFromFileUrl(blueprint.fileUrl);
         if (pdfPagesDirectoryPath) {
             try {
@@ -267,19 +267,19 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
 
         const created = await blueprintService.createBlueprint(createPayload);
 
-        // if (isPdf) {
-        //     const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
-        //         payload.key,
-        //         payload.originalFileName,
-        //     );
+        if (!isPdf) {
+            const downloadedFile = await blueprintService.downloadR2ObjectToUploads(
+                payload.key,
+                payload.originalFileName,
+            );
 
-        //     enqueuePdfBlueprintProcessing({
-        //         blueprintId: created.id,
-        //         filePath: downloadedFile.filePath,
-        //         fileName: downloadedFile.fileName,
-        //         cleanupSourceFile: true,
-        //     });
-        // }
+            void enqueueImageBlueprintProcessing({
+                blueprintId: created.id,
+                filePath: downloadedFile.filePath,
+                fileName: downloadedFile.fileName,
+                cleanupSourceFile: true,
+            });
+        }
 
         res.status(isPdf ? 202 : 201).json(created);
     } catch (error) {

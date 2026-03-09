@@ -36,6 +36,28 @@ function getPdfPageDirectoryPath(fileName: string): string {
     return path.join(uploadsDirectory, getPdfPageDirectoryName(fileName));
 }
 
+function getImageAssetDirectoryName(fileName: string): string {
+    const fileBaseName = path.basename(fileName, path.extname(fileName));
+    return `${fileBaseName}-assets`;
+}
+
+function getImageAssetDirectoryPath(fileName: string): string {
+    return path.join(uploadsDirectory, getImageAssetDirectoryName(fileName));
+}
+
+function getImageContentType(fileName: string): string {
+    const ext = path.extname(fileName).toLowerCase();
+    if (ext === '.png') {
+        return 'image/png';
+    }
+
+    if (ext === '.jpg' || ext === '.jpeg') {
+        return 'image/jpeg';
+    }
+
+    return 'application/octet-stream';
+}
+
 async function renderPdfPagesToImages(filePath: string, fileName: string): Promise<PageAsset[]> {
     const pageDirectoryName = getPdfPageDirectoryName(fileName);
     const pageDirectoryPath = getPdfPageDirectoryPath(fileName);
@@ -195,4 +217,71 @@ export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
             }
         }
     });
+}
+
+export async function enqueueImageBlueprintProcessing(job: ProcessingJob): Promise<void> {
+    const imageAssetDirectoryPath = getImageAssetDirectoryPath(job.fileName);
+    const originalExt = path.extname(job.fileName).toLowerCase() || '.png';
+    const imageName = `page-1${originalExt}`;
+    const imagePath = path.join(imageAssetDirectoryPath, imageName);
+    const thumbnailName = `page-1${THUMBNAIL_SUFFIX}`;
+    const thumbnailPath = path.join(imageAssetDirectoryPath, thumbnailName);
+
+    try {
+        await mkdir(imageAssetDirectoryPath, { recursive: true });
+        await sharp(job.filePath).rotate().toFile(imagePath);
+
+        const image = sharp(imagePath);
+        const metadata = await image.metadata();
+
+        await image
+            .clone()
+            .resize({
+                width: THUMBNAIL_WIDTH,
+                fit: 'inside',
+                withoutEnlargement: true,
+            })
+            .webp({
+                quality: THUMBNAIL_QUALITY,
+            })
+            .toFile(thumbnailPath);
+
+        const imageKey = blueprintService.buildBlueprintPageImageKey(job.blueprintId, imageName);
+        const thumbnailKey = blueprintService.buildBlueprintPageThumbnailKey(
+            job.blueprintId,
+            thumbnailName,
+        );
+        const [imageUrl, thumbnailUrl] = await Promise.all([
+            blueprintService.uploadFileToR2(imageKey, imagePath, getImageContentType(imageName)),
+            blueprintService.uploadFileToR2(thumbnailKey, thumbnailPath, 'image/webp'),
+        ]);
+
+        await blueprintService.replaceBlueprintPagesAndMarkReady(job.blueprintId, [
+            {
+                pageNumber: 1,
+                imageUrl,
+                thumbnailUrl,
+                width: metadata.width ?? null,
+                height: metadata.height ?? null,
+            },
+        ]);
+    } catch (error) {
+        console.error('Error processing image', error);
+        const message = error instanceof Error ? error.message : 'Unknown image processing error';
+        try {
+            await blueprintService.updateBlueprint(job.blueprintId, {
+                pageCount: 0,
+                processingStatus: 'FAILED',
+                processingError: message,
+                processedAt: null,
+            });
+        } catch (updateError) {
+            console.error('Failed to update image processing status', updateError);
+        }
+    } finally {
+        await rm(imageAssetDirectoryPath, { recursive: true, force: true });
+        if (job.cleanupSourceFile) {
+            await rm(job.filePath, { force: true });
+        }
+    }
 }
