@@ -15,6 +15,10 @@ const updateTeamStatusSchema = z.object({
     status: z.nativeEnum(TeamStatus),
 });
 
+const pingServiceSchema = z.object({
+    service: z.enum(['database', 'redis', 'sqs', 'r2', 'stripe', 'ai']),
+});
+
 export async function getDashboard(_req: Request, res: Response, next: NextFunction) {
     try {
         res.json(await adminService.getDashboard());
@@ -124,6 +128,26 @@ export async function updateTeamStatus(req: Request, res: Response, next: NextFu
 export async function getAuditLogs(_req: Request, res: Response, next: NextFunction) {
     try {
         res.json(await adminService.getAuditLogs());
+    } catch (error) {
+        next(error);
+    }
+}
+
+export async function getSystemHealth(_req: Request, res: Response, next: NextFunction) {
+    try {
+        res.json(await adminService.getSystemHealth());
+    } catch (error) {
+        next(error);
+    }
+}
+
+export async function pingSystemService(req: Request, res: Response, next: NextFunction) {
+    try {
+        const payload = pingServiceSchema.parse({
+            service: req.params.service,
+        });
+        const result = await adminService.pingSystemService(req.auth!.userId, payload.service);
+        res.json(result);
     } catch (error) {
         next(error);
     }

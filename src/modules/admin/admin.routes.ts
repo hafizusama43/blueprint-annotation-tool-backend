@@ -8,6 +8,8 @@ const router = Router();
 router.use(requireAuth, requireGlobalRole(AppGlobalRole.SUPER_ADMIN));
 
 router.get('/dashboard', adminController.getDashboard);
+router.get('/system-health', adminController.getSystemHealth);
+router.post('/system-health/:service/ping', adminController.pingSystemService);
 router.get('/users', adminController.listUsers);
 router.patch('/users/:userId/global-role', adminController.updateUserGlobalRole);
 router.get('/organizations', adminController.listOrganizations);
