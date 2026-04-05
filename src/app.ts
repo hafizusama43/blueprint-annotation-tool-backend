@@ -6,6 +6,7 @@ import path from 'node:path';
 import blueprintRoutes from './modules/blueprint/blueprint.routes';
 import calibrationRoutes from './modules/calibration/calibration.routes';
 import authRoutes from './modules/auth/auth.routes';
+import adminRoutes from './modules/admin/admin.routes';
 import organizationRoutes from './modules/organization/organization.routes';
 import projectRoutes from './modules/project/project.routes';
 import shapeRoutes from './modules/shape/shape.routes';
@@ -45,6 +46,7 @@ export function createApp(): Express {
     app.use(rateLimit({ windowMs: 15 * 60 * 1000, maxRequests: 250 }));
 
     app.use(`${apiPrefix}/blueprints`, blueprintRoutes);
+    app.use(`${apiPrefix}/admin`, adminRoutes);
     app.use(`${apiPrefix}/calibrations`, calibrationRoutes);
     app.use(`${apiPrefix}/auth`, authRoutes);
     app.use(`${apiPrefix}/organizations`, organizationRoutes);

@@ -4,6 +4,7 @@ import { Request, Response, NextFunction } from 'express';
 import { BlueprintProcessingStatus, type Prisma } from '@prisma/client';
 import * as blueprintService from './blueprint.service';
 import { createError } from '../../middleware/error.middleware';
+import { assertBlueprintAccess, assertProjectAccess } from '../../services/permissions/permissions.service';
 import { enqueueImageBlueprintProcessing, enqueuePdfBlueprintProcessing } from './blueprint.processor';
 import { uploadsDirectory } from '../../middleware/upload.middleware';
 import {
@@ -172,8 +173,14 @@ function buildBlueprintPages(
 
 export async function getAllBlueprints(_req: Request, res: Response, next: NextFunction) {
     try {
+        if (!_req.auth) {
+            return next(createError('Authentication required', 401));
+        }
         const projectId =
             typeof _req.query.projectId === 'string' ? _req.query.projectId : undefined;
+        if (projectId) {
+            await assertProjectAccess(_req.auth.userId, projectId);
+        }
         const blueprints = await blueprintService.getAllBlueprints({ projectId });
         res.json(blueprints);
     } catch (error) {
@@ -183,6 +190,10 @@ export async function getAllBlueprints(_req: Request, res: Response, next: NextF
 
 export async function getBlueprintById(req: Request, res: Response, next: NextFunction) {
     try {
+        if (!req.auth) {
+            return next(createError('Authentication required', 401));
+        }
+        await assertBlueprintAccess(req.auth.userId, req.params.id);
         const blueprint = await blueprintService.getBlueprintById(req.params.id);
 
         if (!blueprint) {
@@ -201,6 +212,10 @@ export async function getBlueprintProcessingStatus(
     next: NextFunction,
 ) {
     try {
+        if (!req.auth) {
+            return next(createError('Authentication required', 401));
+        }
+        await assertBlueprintAccess(req.auth.userId, req.params.id);
         const status = await blueprintService.getBlueprintStatusById(req.params.id);
 
         if (!status) {
@@ -215,7 +230,13 @@ export async function getBlueprintProcessingStatus(
 
 export async function createBlueprint(req: Request, res: Response, next: NextFunction) {
     try {
+        if (!req.auth) {
+            return next(createError('Authentication required', 401));
+        }
         const payload = blueprintSchema.parse(req.body);
+        if (payload.projectId) {
+            await assertProjectAccess(req.auth.userId, payload.projectId);
+        }
 
         const createPayload: Prisma.BlueprintCreateInput = {
             name: payload.name,
@@ -268,7 +289,13 @@ export async function createBlueprint(req: Request, res: Response, next: NextFun
 
 export async function uploadBlueprint(req: Request, res: Response, next: NextFunction) {
     try {
+        if (!req.auth) {
+            return next(createError('Authentication required', 401));
+        }
         const payload = req.body as UploadBlueprintRequest;
+        if (payload.projectId) {
+            await assertProjectAccess(req.auth.userId, payload.projectId);
+        }
         const metadata = parseMetadata(payload.metadata);
         const r2Object = await blueprintService.getR2ObjectMetadata(payload.key);
 
@@ -329,7 +356,7 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
                 payload.originalFileName,
             );
 
-            void enqueueImageBlueprintProcessing({
+            await enqueueImageBlueprintProcessing({
                 blueprintId: created.id,
                 filePath: downloadedFile.filePath,
                 fileName: downloadedFile.fileName,
@@ -351,6 +378,10 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
     if (!blueprintId) {
         return next(createError('Blueprint id is required', 400));
     }
+    if (!req.auth) {
+        return next(createError('Authentication required', 401));
+    }
+    await assertBlueprintAccess(req.auth.userId, blueprintId);
 
     // await blueprintService.updateBlueprint(blueprintId, {
     //     processingStatus: BlueprintProcessingStatus.PROCESSING,
@@ -395,7 +426,7 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
                 blueprint.originalFileName,
             );
 
-            enqueuePdfBlueprintProcessing({
+            await enqueuePdfBlueprintProcessing({
                 blueprintId: blueprint.id,
                 filePath: downloadedFile.filePath,
                 fileName: downloadedFile.fileName,
@@ -431,6 +462,10 @@ export async function retryBlueprintProcessingAndWait(
     next: NextFunction,
 ) {
     try {
+        if (!req.auth) {
+            return next(createError('Authentication required', 401));
+        }
+        await assertBlueprintAccess(req.auth.userId, req.params.id);
         const blueprint = await blueprintService.getBlueprintById(req.params.id);
 
         if (!blueprint) {
@@ -448,7 +483,7 @@ export async function retryBlueprintProcessingAndWait(
             return next(createError('Blueprint is already being processed', 409));
         }
 
-        const updated = await blueprintService.resetBlueprintForProcessing(blueprint.id);
+        await blueprintService.resetBlueprintForProcessing(blueprint.id);
         const r2ObjectKey = getR2ObjectKeyFromMetadata(blueprint.metadata);
 
         let filePath: string;
@@ -469,7 +504,7 @@ export async function retryBlueprintProcessingAndWait(
             );
         }
 
-        enqueuePdfBlueprintProcessing({
+        await enqueuePdfBlueprintProcessing({
             blueprintId: blueprint.id,
             filePath,
             fileName,
@@ -484,6 +519,10 @@ export async function retryBlueprintProcessingAndWait(
 
 export async function deleteBlueprint(req: Request, res: Response, next: NextFunction) {
     try {
+        if (!req.auth) {
+            return next(createError('Authentication required', 401));
+        }
+        await assertBlueprintAccess(req.auth.userId, req.params.id);
         const blueprint = await blueprintService.getBlueprintById(req.params.id);
         if (!blueprint) {
             return next(createError('Blueprint not found', 404));
@@ -507,6 +546,9 @@ export async function deleteBlueprint(req: Request, res: Response, next: NextFun
 
 export async function getPreSignedUrl(req: Request, res: Response, next: NextFunction) {
     try {
+        if (!req.auth) {
+            return next(createError('Authentication required', 401));
+        }
         const payload = req.body as PresignedUploadRequest;
         const result = await blueprintService.getPresignedUploadUrl(
             payload.fileName,

@@ -1,5 +1,7 @@
 import type { Prisma, UserRole } from '@prisma/client';
 import { prisma } from '../../config/prisma';
+import { deleteKeys, getOrSetJson } from '../../services/cache/cache.service';
+import { cacheKeys } from '../../services/cache/keys';
 
 export type ProjectPayload = {
     organizationId: string;
@@ -47,27 +49,82 @@ export async function getProjects(organizationId?: string, teamId?: string) {
 }
 
 export async function getProjectById(id: string) {
-    return prisma.project.findUnique({
+    return getOrSetJson(cacheKeys.project(id), () =>
+        prisma.project.findUnique({
+            where: { id },
+            include: {
+                organization: true,
+                team: true,
+                collaborators: {
+                    include: {
+                        user: true,
+                        team: true,
+                    },
+                    orderBy: {
+                        createdAt: 'asc',
+                    },
+                },
+                blueprints: {
+                    orderBy: {
+                        createdAt: 'desc',
+                    },
+                },
+            },
+        }),
+    );
+}
+
+export async function updateProject(
+    id: string,
+    data: {
+        name?: string;
+        description?: string | null;
+        collaborationEnabled?: boolean | null;
+        teamId?: string | null;
+    },
+) {
+    const project = await prisma.project.update({
         where: { id },
+        data: {
+            ...(data.name !== undefined ? { name: data.name } : {}),
+            ...(data.description !== undefined ? { description: data.description ?? null } : {}),
+            ...(data.collaborationEnabled !== undefined
+                ? { collaborationEnabled: data.collaborationEnabled }
+                : {}),
+            ...(data.teamId !== undefined
+                ? {
+                      team: data.teamId
+                          ? {
+                                connect: {
+                                    id: data.teamId,
+                                },
+                            }
+                          : {
+                                disconnect: true,
+                            },
+                  }
+                : {}),
+        },
         include: {
             organization: true,
             team: true,
-            collaborators: {
-                include: {
-                    user: true,
-                    team: true,
-                },
-                orderBy: {
-                    createdAt: 'asc',
-                },
-            },
-            blueprints: {
-                orderBy: {
-                    createdAt: 'desc',
-                },
-            },
+            collaborators: true,
         },
     });
+    await deleteKeys(cacheKeys.project(id));
+    return project;
+}
+
+export async function archiveProject(id: string) {
+    const project = await prisma.project.update({
+        where: { id },
+        data: {
+            status: 'ARCHIVED',
+            archivedAt: new Date(),
+        },
+    });
+    await deleteKeys(cacheKeys.project(id));
+    return project;
 }
 
 export async function createProject(data: ProjectPayload) {
@@ -101,17 +158,19 @@ export async function createProject(data: ProjectPayload) {
             : {}),
     };
 
-    return prisma.project.create({
+    const project = await prisma.project.create({
         data: createData,
         include: {
             organization: true,
             team: true,
         },
     });
+    await deleteKeys(cacheKeys.project(project.id), cacheKeys.organization(project.organizationId));
+    return project;
 }
 
 export async function addProjectCollaborator(data: ProjectCollaboratorPayload) {
-    return prisma.projectCollaborator.upsert({
+    const collaborator = await prisma.projectCollaborator.upsert({
         where: {
             projectId_userId: {
                 projectId: data.projectId,
@@ -158,4 +217,19 @@ export async function addProjectCollaborator(data: ProjectCollaboratorPayload) {
             team: true,
         },
     });
+    await deleteKeys(cacheKeys.project(data.projectId), cacheKeys.user(data.userId));
+    return collaborator;
+}
+
+export async function removeProjectCollaborator(projectId: string, userId: string) {
+    const collaborator = await prisma.projectCollaborator.delete({
+        where: {
+            projectId_userId: {
+                projectId,
+                userId,
+            },
+        },
+    });
+    await deleteKeys(cacheKeys.project(projectId), cacheKeys.user(userId));
+    return collaborator;
 }

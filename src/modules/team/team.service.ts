@@ -5,7 +5,8 @@ export type TeamPayload = {
     organizationId: string;
     name: string;
     slug: string;
-    description?: string;
+    description?: string | null;
+    status?: 'ACTIVE' | 'DISABLED';
     createdByUserId?: string;
 };
 
@@ -73,12 +74,13 @@ export async function createTeam(data: TeamPayload) {
             : {}),
     };
 
-    return prisma.team.create({
+    const team = await prisma.team.create({
         data: createData,
         include: {
             organization: true,
         },
     });
+    return team;
 }
 
 export async function addTeamMember(data: TeamMemberPayload) {
@@ -117,6 +119,42 @@ export async function addTeamMember(data: TeamMemberPayload) {
         include: {
             team: true,
             user: true,
+        },
+    });
+}
+
+export async function updateTeam(
+    id: string,
+    data: {
+        name?: string;
+        description?: string | null;
+        status?: 'ACTIVE' | 'DISABLED';
+    },
+) {
+    return prisma.team.update({
+        where: { id },
+        data: {
+            ...(data.name !== undefined ? { name: data.name } : {}),
+            ...(data.description !== undefined ? { description: data.description ?? null } : {}),
+            ...(data.status !== undefined ? { status: data.status } : {}),
+        },
+        include: {
+            organization: true,
+            members: true,
+        },
+    });
+}
+
+export async function removeTeamMember(teamId: string, userId: string) {
+    return prisma.teamMember.update({
+        where: {
+            teamId_userId: {
+                teamId,
+                userId,
+            },
+        },
+        data: {
+            status: 'REMOVED',
         },
     });
 }

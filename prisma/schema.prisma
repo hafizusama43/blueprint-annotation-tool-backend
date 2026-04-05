@@ -13,14 +13,21 @@ model User {
     firstName                 String?
     lastName                  String?
     displayName               String?
+    globalRole                AppGlobalRole          @default(USER)
     authProvider              AuthProvider           @default(LOCAL)
     externalAuthId            String?
     status                    UserStatus             @default(ACTIVE)
+    emailVerifiedAt           DateTime?
     lastLoginAt               DateTime?
+    failedSignInCount         Int                    @default(0)
+    lockedUntil               DateTime?
+    passwordChangedAt         DateTime?
     createdAt                 DateTime               @default(now())
     updatedAt                 DateTime               @updatedAt
     authSessions              AuthSession[]
     loginEvents               LoginEvent[]
+    userTokens                UserToken[]
+    adminAuditLogs            AdminAuditLog[]        @relation("AdminAuditActor")
     organizationMemberships   OrganizationMember[]
     invitedOrganizationLinks  OrganizationMember[]   @relation("OrganizationMemberInvitedBy")
     ownedOrganizations        Organization[]         @relation("OrganizationOwner")
@@ -42,12 +49,14 @@ model AuthSession {
     userId           String
     refreshTokenHash String       @unique
     tokenFamily      String?
+    rotationCounter  Int          @default(0)
     deviceName       String?
     userAgent        String?
     ipAddress        String?
     lastSeenAt       DateTime?
     expiresAt        DateTime
     revokedAt        DateTime?
+    revokeReason     String?
     createdAt        DateTime     @default(now())
     updatedAt        DateTime     @updatedAt
     user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -73,6 +82,36 @@ model LoginEvent {
 
     @@index([userId])
     @@index([sessionId])
+    @@index([createdAt])
+}
+
+model UserToken {
+    id         String        @id @default(cuid())
+    userId      String
+    type        UserTokenType
+    tokenHash   String        @unique
+    expiresAt   DateTime
+    consumedAt  DateTime?
+    metadata    Json?
+    createdAt   DateTime      @default(now())
+    user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    @@index([userId, type])
+    @@index([expiresAt])
+}
+
+model AdminAuditLog {
+    id            String       @id @default(cuid())
+    actorUserId    String?
+    action        String
+    targetType    String
+    targetId      String?
+    metadata      Json?
+    createdAt     DateTime     @default(now())
+    actor         User?        @relation("AdminAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+    @@index([actorUserId])
+    @@index([targetType, targetId])
     @@index([createdAt])
 }
 
@@ -122,6 +161,7 @@ model Team {
     name            String
     slug            String
     description     String?
+    status          TeamStatus   @default(ACTIVE)
     createdByUserId String?
     createdAt       DateTime     @default(now())
     updatedAt       DateTime     @updatedAt
@@ -202,6 +242,7 @@ model SubscriptionPlan {
     code                   String                   @unique
     name                   String
     description            String?
+    providerPlanId         String?
     billingInterval        BillingInterval
     amountInCents          Int
     currency               String                   @default("USD")
@@ -395,10 +436,21 @@ enum AuthProvider {
     SSO
 }
 
+enum AppGlobalRole {
+    USER
+    SUPER_ADMIN
+}
+
 enum UserStatus {
     ACTIVE
     INVITED
     SUSPENDED
+}
+
+enum UserTokenType {
+    EMAIL_VERIFICATION
+    PASSWORD_RESET
+    INVITATION_ACCEPT
 }
 
 enum UserRole {
@@ -421,6 +473,11 @@ enum OrganizationStatus {
 enum ProjectStatus {
     ACTIVE
     ARCHIVED
+}
+
+enum TeamStatus {
+    ACTIVE
+    DISABLED
 }
 
 enum CollaborationSource {

@@ -7,6 +7,7 @@ type TokenPayload = {
     type: 'access' | 'refresh';
     orgId?: string;
     role?: string;
+    globalRole?: string;
 };
 
 function toBase64Url(input: Buffer | string): string {
@@ -98,8 +99,16 @@ export function hashRefreshToken(token: string): string {
     return createHmac('sha256', env.JWT_REFRESH_SECRET).update(token).digest('hex');
 }
 
+export function hashOpaqueToken(token: string): string {
+    return createHmac('sha256', env.JWT_ACCESS_SECRET).update(token).digest('hex');
+}
+
 export function generateSessionToken(): string {
     return randomBytes(48).toString('hex');
+}
+
+export function generateOpaqueToken(): string {
+    return randomBytes(32).toString('hex');
 }
 
 export function createAccessToken(payload: Omit<TokenPayload, 'type'>): string {

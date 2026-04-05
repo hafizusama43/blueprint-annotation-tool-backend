@@ -29,12 +29,72 @@ export const envSchema = z.object({
             z.number().int().positive(),
         ])
         .default(30),
+    JWT_EMAIL_VERIFICATION_TTL_HOURS: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(24),
+    JWT_PASSWORD_RESET_TTL_MINUTES: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(30),
+    AUTH_MAX_FAILED_ATTEMPTS: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(5),
+    AUTH_LOCK_MINUTES: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(15),
     PASSWORD_SCRYPT_COST: z
         .union([
             z.string().transform(Number).pipe(z.number().int().positive()),
             z.number().int().positive(),
         ])
         .default(16384),
+    APP_BASE_URL: z.string().url().default('http://localhost:8000'),
+    DEFAULT_PERSONAL_PROJECT_NAME: z.string().default('My Project'),
+    DEFAULT_ORGANIZATION_PROJECT_NAME: z.string().default('Getting Started'),
+    REDIS_URL: z.string().url().optional(),
+    REDIS_DEFAULT_TTL_SECONDS: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(300),
+    AWS_REGION: z.string().default('us-east-1'),
+    SQS_BLUEPRINT_QUEUE_URL: z.string().url().optional(),
+    SQS_BLUEPRINT_QUEUE_BATCH_SIZE: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(1),
+    WORKER_POLL_INTERVAL_MS: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(5000),
+    BLUEPRINT_PAGE_BATCH_SIZE: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(10),
+    AI_SERVICE_URL: z.string().url().optional(),
+    AI_SERVICE_API_KEY: z.string().optional(),
+    STRIPE_SECRET_KEY: z.string().optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().optional(),
+    STRIPE_SUCCESS_URL: z.string().url().optional(),
+    STRIPE_CANCEL_URL: z.string().url().optional(),
     CF_R2_ACCESS_KEY: z.string().min(1),
     CF_R2_SECRET_KEY: z.string().min(1),
     CF_R2_ACCOUNT_ID: z.string().min(1),

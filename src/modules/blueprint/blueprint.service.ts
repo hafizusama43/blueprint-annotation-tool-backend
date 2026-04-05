@@ -25,6 +25,8 @@ import { prisma } from '../../config/prisma';
 import { r2Client, R2_BUCKET, R2_PUBLIC_BASE_URL } from '../../config/r2';
 import { createError } from '../../middleware/error.middleware';
 import { uploadsDirectory } from '../../middleware/upload.middleware';
+import { deleteKeys, getOrSetJson } from '../../services/cache/cache.service';
+import { cacheKeys } from '../../services/cache/keys';
 
 export type BlueprintPayload = Prisma.BlueprintCreateInput;
 export type BlueprintWithPages = Blueprint & {
@@ -109,48 +111,52 @@ export async function getAllBlueprints(filters?: { projectId?: string }): Promis
 }
 
 export async function getBlueprintById(id: string): Promise<BlueprintWithPages | null> {
-    const blueprint = await prisma.blueprint.findUnique({
-        where: { id },
-        include: {
-            project: true,
-            uploadedBy: true,
-            pages: {
-                orderBy: {
-                    pageNumber: 'asc',
+    const blueprint = await getOrSetJson(cacheKeys.blueprint(id), () =>
+        prisma.blueprint.findUnique({
+            where: { id },
+            include: {
+                project: true,
+                uploadedBy: true,
+                pages: {
+                    orderBy: {
+                        pageNumber: 'asc',
+                    },
                 },
             },
-        },
-    });
+        }),
+    );
 
     return blueprint ? normalizeBlueprintWithPagesPublicUrls(blueprint) : null;
 }
 
 export async function getBlueprintStatusById(id: string): Promise<BlueprintStatus | null> {
-    return prisma.blueprint.findUnique({
-        where: { id },
-        select: {
-            id: true,
-            processingStatus: true,
-            processingStep: true,
-            processingError: true,
-            processedAt: true,
-            pageCount: true,
-            totalPages: true,
-            processedPages: true,
-            thumbnailsGenerated: true,
-            aiProcessedPages: true,
-            readyPages: true,
-            failedPages: true,
-            currentBatch: true,
-            totalBatches: true,
-            lastHeartbeatAt: true,
-            updatedAt: true,
-        },
-    });
+    return getOrSetJson(cacheKeys.blueprintStatus(id), () =>
+        prisma.blueprint.findUnique({
+            where: { id },
+            select: {
+                id: true,
+                processingStatus: true,
+                processingStep: true,
+                processingError: true,
+                processedAt: true,
+                pageCount: true,
+                totalPages: true,
+                processedPages: true,
+                thumbnailsGenerated: true,
+                aiProcessedPages: true,
+                readyPages: true,
+                failedPages: true,
+                currentBatch: true,
+                totalBatches: true,
+                lastHeartbeatAt: true,
+                updatedAt: true,
+            },
+        }),
+    );
 }
 
 export async function createBlueprint(data: BlueprintPayload): Promise<BlueprintWithPages> {
-    return prisma.blueprint.create({
+    const blueprint = await prisma.blueprint.create({
         data,
         include: {
             project: true,
@@ -162,13 +168,15 @@ export async function createBlueprint(data: BlueprintPayload): Promise<Blueprint
             },
         },
     });
+    await deleteKeys(cacheKeys.blueprint(blueprint.id), cacheKeys.blueprintStatus(blueprint.id));
+    return blueprint;
 }
 
 export async function updateBlueprint(
     id: string,
     data: Prisma.BlueprintUpdateInput,
 ): Promise<BlueprintWithPages> {
-    return prisma.blueprint.update({
+    const blueprint = await prisma.blueprint.update({
         where: { id },
         data,
         include: {
@@ -181,13 +189,15 @@ export async function updateBlueprint(
             },
         },
     });
+    await deleteKeys(cacheKeys.blueprint(id), cacheKeys.blueprintStatus(id));
+    return blueprint;
 }
 
 export async function replaceBlueprintPagesAndMarkReady(
     blueprintId: string,
     pages: Prisma.BlueprintPageCreateManyBlueprintInput[],
 ): Promise<BlueprintWithPages> {
-    return prisma.$transaction(async (tx) => {
+    const blueprint = await prisma.$transaction(async (tx) => {
         await tx.blueprintPage.deleteMany({
             where: { blueprintId },
         });
@@ -230,12 +240,83 @@ export async function replaceBlueprintPagesAndMarkReady(
             },
         });
     });
+    await deleteKeys(cacheKeys.blueprint(blueprintId), cacheKeys.blueprintStatus(blueprintId));
+    return blueprint;
+}
+
+export async function upsertBlueprintPages(
+    blueprintId: string,
+    pages: Array<{
+        pageNumber: number;
+        imageUrl: string;
+        thumbnailUrl: string;
+        width?: number | null;
+        height?: number | null;
+        pageStatus?: 'PENDING' | 'RENDERING' | 'READY' | 'FAILED';
+    }>,
+) {
+    for (const page of pages) {
+        await prisma.blueprintPage.upsert({
+            where: {
+                blueprintId_pageNumber: {
+                    blueprintId,
+                    pageNumber: page.pageNumber,
+                },
+            },
+            update: {
+                imageUrl: page.imageUrl,
+                thumbnailUrl: page.thumbnailUrl,
+                width: page.width ?? null,
+                height: page.height ?? null,
+                pageStatus: page.pageStatus ?? 'READY',
+                renderedAt: new Date(),
+                processingError: null,
+            },
+            create: {
+                blueprintId,
+                pageNumber: page.pageNumber,
+                imageUrl: page.imageUrl,
+                thumbnailUrl: page.thumbnailUrl,
+                width: page.width ?? null,
+                height: page.height ?? null,
+                pageStatus: page.pageStatus ?? 'READY',
+                renderedAt: new Date(),
+            },
+        });
+    }
+
+    await deleteKeys(cacheKeys.blueprint(blueprintId), cacheKeys.blueprintStatus(blueprintId));
+}
+
+export async function updateBlueprintPageAI(
+    blueprintId: string,
+    pageNumber: number,
+    aiMetadata: Prisma.InputJsonValue | undefined,
+    aiStatus: 'PENDING' | 'PROCESSING' | 'READY' | 'FAILED' | 'SKIPPED',
+    processingError?: string | null,
+) {
+    await prisma.blueprintPage.update({
+        where: {
+            blueprintId_pageNumber: {
+                blueprintId,
+                pageNumber,
+            },
+        },
+        data: {
+            aiMetadata: aiMetadata ?? undefined,
+            aiStatus,
+            aiProcessedAt: aiStatus === 'READY' ? new Date() : null,
+            processingError: processingError ?? null,
+        },
+    });
+
+    await deleteKeys(cacheKeys.blueprint(blueprintId), cacheKeys.blueprintStatus(blueprintId));
 }
 
 export async function resetBlueprintForProcessing(
     blueprintId: string,
 ): Promise<BlueprintWithPages> {
-    return prisma.$transaction(async (tx) => {
+    const blueprint = await prisma.$transaction(async (tx) => {
         await tx.blueprintPage.deleteMany({
             where: { blueprintId },
         });
@@ -273,10 +354,12 @@ export async function resetBlueprintForProcessing(
             },
         });
     });
+    await deleteKeys(cacheKeys.blueprint(blueprintId), cacheKeys.blueprintStatus(blueprintId));
+    return blueprint;
 }
 
 export async function deleteBlueprintById(id: string): Promise<BlueprintWithPages> {
-    return prisma.blueprint.delete({
+    const blueprint = await prisma.blueprint.delete({
         where: { id },
         include: {
             project: true,
@@ -288,6 +371,8 @@ export async function deleteBlueprintById(id: string): Promise<BlueprintWithPage
             },
         },
     });
+    await deleteKeys(cacheKeys.blueprint(id), cacheKeys.blueprintStatus(id));
+    return blueprint;
 }
 
 const PRESIGNED_EXPIRES_IN_SECONDS = 3600; // 1 hour
@@ -563,6 +648,7 @@ export async function setBlueprintProcessingState(
             lastHeartbeatAt: new Date(),
         },
     });
+    await deleteKeys(cacheKeys.blueprint(blueprintId), cacheKeys.blueprintStatus(blueprintId));
 }
 
 export async function deleteR2ObjectsByPrefix(prefix: string): Promise<void> {

@@ -1,11 +1,13 @@
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
+import { deleteKeys, getOrSetJson } from '../../services/cache/cache.service';
+import { cacheKeys } from '../../services/cache/keys';
 
 export type OrganizationPayload = {
     name: string;
     slug: string;
-    description?: string;
-    billingEmail?: string;
+    description?: string | null;
+    billingEmail?: string | null;
     personalWorkspace?: boolean;
     collaborationEnabled?: boolean;
     ownerId?: string;
@@ -51,30 +53,86 @@ export async function getOrganizations(userId?: string) {
 }
 
 export async function getOrganizationById(id: string) {
-    return prisma.organization.findUnique({
+    return getOrSetJson(cacheKeys.organization(id), () =>
+        prisma.organization.findUnique({
+            where: { id },
+            include: {
+                owner: true,
+                memberships: {
+                    include: {
+                        user: true,
+                    },
+                    orderBy: {
+                        createdAt: 'asc',
+                    },
+                },
+                teams: true,
+                projects: true,
+                subscriptions: {
+                    include: {
+                        plan: true,
+                    },
+                    orderBy: {
+                        createdAt: 'desc',
+                    },
+                },
+            },
+        }),
+    );
+}
+
+export async function updateOrganization(
+    id: string,
+    data: {
+        name?: string;
+        description?: string | null;
+        billingEmail?: string | null;
+        collaborationEnabled?: boolean;
+    },
+) {
+    const organization = await prisma.organization.update({
         where: { id },
+        data: {
+            ...(data.name !== undefined ? { name: data.name } : {}),
+            ...(data.description !== undefined ? { description: data.description ?? null } : {}),
+            ...(data.billingEmail !== undefined ? { billingEmail: data.billingEmail ?? null } : {}),
+            ...(data.collaborationEnabled !== undefined
+                ? { collaborationEnabled: data.collaborationEnabled }
+                : {}),
+        },
         include: {
             owner: true,
-            memberships: {
-                include: {
-                    user: true,
-                },
-                orderBy: {
-                    createdAt: 'asc',
-                },
-            },
-            teams: true,
-            projects: true,
-            subscriptions: {
-                include: {
-                    plan: true,
-                },
-                orderBy: {
-                    createdAt: 'desc',
-                },
-            },
+            memberships: true,
         },
     });
+
+    await deleteKeys(cacheKeys.organization(id));
+    return organization;
+}
+
+export async function updateOrganizationStatus(id: string, status: 'ACTIVE' | 'TRIALING' | 'SUSPENDED') {
+    const organization = await prisma.organization.update({
+        where: { id },
+        data: { status },
+    });
+    await deleteKeys(cacheKeys.organization(id));
+    return organization;
+}
+
+export async function removeOrganizationMember(organizationId: string, userId: string) {
+    const membership = await prisma.organizationMember.update({
+        where: {
+            organizationId_userId: {
+                organizationId,
+                userId,
+            },
+        },
+        data: {
+            status: 'REMOVED',
+        },
+    });
+    await deleteKeys(cacheKeys.organization(organizationId), cacheKeys.user(userId));
+    return membership;
 }
 
 export async function createOrganization(data: OrganizationPayload) {
@@ -106,17 +164,19 @@ export async function createOrganization(data: OrganizationPayload) {
             : {}),
     };
 
-    return prisma.organization.create({
+    const organization = await prisma.organization.create({
         data: createData,
         include: {
             owner: true,
             memberships: true,
         },
     });
+    await deleteKeys(cacheKeys.organization(organization.id));
+    return organization;
 }
 
 export async function addOrganizationMember(data: OrganizationMemberPayload) {
-    return prisma.organizationMember.upsert({
+    const membership = await prisma.organizationMember.upsert({
         where: {
             organizationId_userId: {
                 organizationId: data.organizationId,
@@ -154,4 +214,9 @@ export async function addOrganizationMember(data: OrganizationMemberPayload) {
             user: true,
         },
     });
+    await deleteKeys(
+        cacheKeys.organization(data.organizationId),
+        cacheKeys.user(data.userId),
+    );
+    return membership;
 }

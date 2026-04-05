@@ -1,12 +1,16 @@
 import { Router } from 'express';
-import { UserRole } from '@prisma/client';
-import { requireAuth, requireRole } from '../../middleware/auth.middleware';
+import { requireAuth } from '../../middleware/auth.middleware';
 import * as subscriptionController from './subscription.controller';
 
 const router = Router();
 
 router.get('/plans', requireAuth, subscriptionController.getPlans);
-router.post('/plans', requireAuth, requireRole(UserRole.ADMIN), subscriptionController.createPlan);
+router.post('/plans', requireAuth, subscriptionController.createPlan);
+router.post(
+    '/organizations/:organizationId/checkout',
+    requireAuth,
+    subscriptionController.createCheckoutSession,
+);
 router.get(
     '/organizations/:organizationId/subscriptions',
     requireAuth,
@@ -15,7 +19,6 @@ router.get(
 router.post(
     '/organizations/:organizationId/subscriptions',
     requireAuth,
-    requireRole(UserRole.ADMIN),
     subscriptionController.createOrganizationSubscription,
 );
 router.get(
@@ -26,8 +29,8 @@ router.get(
 router.post(
     '/organizations/:organizationId/payments',
     requireAuth,
-    requireRole(UserRole.ADMIN),
     subscriptionController.createPayment,
 );
+router.post('/stripe/webhook', subscriptionController.stripeWebhook);
 
 export default router;
