@@ -155,9 +155,9 @@ async function createUserToken(userId: string, type: UserTokenType, ttlMs: numbe
     return rawToken;
 }
 
-async function consumeUserToken(rawToken: string, type: UserTokenType) {
+async function getValidUserToken(rawToken: string, type: UserTokenType) {
     const tokenHash = hashOpaqueToken(rawToken);
-    const token = await prisma.userToken.findFirst({
+    return prisma.userToken.findFirst({
         where: {
             tokenHash,
             type,
@@ -167,6 +167,11 @@ async function consumeUserToken(rawToken: string, type: UserTokenType) {
             },
         },
     });
+
+}
+
+async function consumeUserToken(rawToken: string, type: UserTokenType) {
+    const token = await getValidUserToken(rawToken, type);
 
     if (!token) {
         throw createError('Token is invalid or expired', 400);
@@ -379,7 +384,22 @@ export async function register(input: RegisterInput): Promise<RegisterResult> {
 export async function login(input: LoginInput): Promise<AuthTokens> {
     const user = await getUserForAuth(input.email);
 
-    if (!user || !user.passwordHash) {
+    if (!user) {
+        await logLoginEvent({
+            email: input.email,
+            eventType: 'FAILED_SIGN_IN',
+            success: false,
+            ipAddress: input.ipAddress ?? null,
+            userAgent: input.userAgent ?? null,
+        });
+        throw createError('Invalid email or password', 401);
+    }
+
+    if (user.status === 'INVITED') {
+        throw createError('Please accept your invitation before signing in', 403);
+    }
+
+    if (!user.passwordHash) {
         await logLoginEvent({
             email: input.email,
             eventType: 'FAILED_SIGN_IN',
@@ -595,32 +615,91 @@ export async function changePassword(
 }
 
 export async function acceptInvitation(token: string, password?: string): Promise<void> {
-    const invitationToken = await consumeUserToken(token, 'INVITATION_ACCEPT');
+    const invitationToken = await getValidUserToken(token, 'INVITATION_ACCEPT');
+    if (!invitationToken) {
+        throw createError('Token is invalid or expired', 400);
+    }
+
     const metadata =
         invitationToken.metadata && typeof invitationToken.metadata === 'object'
             ? (invitationToken.metadata as Record<string, unknown>)
             : {};
-    const membershipId =
+    const organizationMemberId =
         typeof metadata.organizationMemberId === 'string' ? metadata.organizationMemberId : null;
+    const teamMemberId = typeof metadata.teamMemberId === 'string' ? metadata.teamMemberId : null;
+    const organizationId =
+        typeof metadata.organizationId === 'string' ? metadata.organizationId : undefined;
 
-    if (membershipId) {
-        await prisma.organizationMember.update({
-            where: { id: membershipId },
-            data: {
-                status: 'ACTIVE',
-            },
-        });
+    const user = await prisma.user.findUnique({
+        where: { id: invitationToken.userId },
+        select: {
+            id: true,
+            passwordHash: true,
+        },
+    });
+
+    if (!user) {
+        throw createError('Invited user not found', 404);
     }
 
-    if (password) {
-        await prisma.user.update({
+    if (!user.passwordHash && !password) {
+        throw createError('Password is required to accept this invitation', 400);
+    }
+
+    await prisma.$transaction(async (tx) => {
+        const consumed = await tx.userToken.updateMany({
+            where: {
+                id: invitationToken.id,
+                consumedAt: null,
+            },
+            data: {
+                consumedAt: new Date(),
+            },
+        });
+
+        if (consumed.count !== 1) {
+            throw createError('Token is invalid or expired', 400);
+        }
+
+        if (organizationMemberId) {
+            await tx.organizationMember.update({
+                where: { id: organizationMemberId },
+                data: {
+                    status: 'ACTIVE',
+                },
+            });
+        }
+
+        if (teamMemberId) {
+            await tx.teamMember.update({
+                where: { id: teamMemberId },
+                data: {
+                    status: 'ACTIVE',
+                },
+            });
+        }
+
+        await tx.user.update({
             where: { id: invitationToken.userId },
             data: {
-                passwordHash: hashPassword(password),
+                status: 'ACTIVE',
                 emailVerifiedAt: new Date(),
+                ...(user.passwordHash
+                    ? {}
+                    : {
+                          passwordHash: hashPassword(password!),
+                          passwordChangedAt: new Date(),
+                          failedSignInCount: 0,
+                          lockedUntil: null,
+                      }),
             },
         });
-    }
+    });
+
+    await deleteKeys(
+        cacheKeys.user(invitationToken.userId),
+        ...(organizationId ? [cacheKeys.organization(organizationId)] : []),
+    );
 }
 
 export async function logoutSession(userId: string, sessionId: string): Promise<void> {

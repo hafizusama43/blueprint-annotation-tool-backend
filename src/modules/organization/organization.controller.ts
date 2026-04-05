@@ -17,7 +17,11 @@ const organizationSchema = z.object({
 });
 
 const memberSchema = z.object({
-    userId: z.string().cuid(),
+    email: z.string().email(),
+    firstName: z.string().min(1).optional(),
+    lastName: z.string().min(1).optional(),
+    displayName: z.string().min(1).optional(),
+    teamId: z.string().cuid(),
     role: z.nativeEnum(UserRole),
 });
 
@@ -77,23 +81,28 @@ export async function addOrganizationMember(req: Request, res: Response, next: N
         }
         await assertOrganizationRole(req.auth.userId, req.params.id, [UserRole.ADMIN]);
         const payload = memberSchema.parse(req.body);
-        const membership = await organizationService.addOrganizationMember({
+        const invitation = await organizationService.addOrganizationMember({
             organizationId: req.params.id,
-            userId: payload.userId,
+            email: payload.email,
+            firstName: payload.firstName,
+            lastName: payload.lastName,
+            displayName: payload.displayName,
+            teamId: payload.teamId,
             role: payload.role,
             invitedByUserId: req.auth?.userId,
         });
         await logAdminAction({
             actorUserId: req.auth.userId,
-            action: 'organization_member_added',
+            action: 'organization_member_invited',
             targetType: 'Organization',
             targetId: req.params.id,
             metadata: {
-                userId: payload.userId,
+                email: payload.email,
+                teamId: payload.teamId,
                 role: payload.role,
             },
         });
-        res.status(201).json(membership);
+        res.status(201).json(invitation);
     } catch (error) {
         next(error);
     }
