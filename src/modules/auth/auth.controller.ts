@@ -49,6 +49,10 @@ const invitationSchema = z.object({
     password: z.string().min(8).optional(),
 });
 
+const invitationDetailsSchema = z.object({
+    token: z.string().min(1),
+});
+
 function getRequestMetadata(req: Request) {
     return {
         userAgent: req.get('user-agent') ?? undefined,
@@ -205,6 +209,16 @@ export async function acceptInvitation(req: Request, res: Response, next: NextFu
         const payload = invitationSchema.parse(req.body);
         await authService.acceptInvitation(payload.token, payload.password);
         res.status(204).send();
+    } catch (error) {
+        next(error);
+    }
+}
+
+export async function getInvitationDetails(req: Request, res: Response, next: NextFunction) {
+    try {
+        const payload = invitationDetailsSchema.parse(req.query);
+        const invitation = await authService.getInvitationDetails(payload.token);
+        res.json(invitation);
     } catch (error) {
         next(error);
     }

@@ -11,6 +11,7 @@ router.post('/verify-email', authController.verifyEmail);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/reset-password', authController.resetPassword);
 router.post('/accept-invitation', authController.acceptInvitation);
+router.get('/invitation-details', authController.getInvitationDetails);
 router.post('/logout', requireAuth, authController.logout);
 router.post('/logout-other-sessions', requireAuth, authController.logoutOtherSessions);
 router.post('/change-password', requireAuth, authController.changePassword);

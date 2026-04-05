@@ -66,6 +66,21 @@ export type RegisterResult = {
     verificationToken: string;
 };
 
+export type InvitationDetailsResult = {
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string | null;
+    organizationId?: string;
+    organizationName?: string;
+    teamId?: string;
+    teamName?: string;
+    inviterName?: string;
+    role?: UserRole;
+    requiresPassword: boolean;
+    expiresAt: Date;
+};
+
 type UserWithMemberships = User & {
     organizationMemberships: Array<{
         organizationId: string;
@@ -700,6 +715,97 @@ export async function acceptInvitation(token: string, password?: string): Promis
         cacheKeys.user(invitationToken.userId),
         ...(organizationId ? [cacheKeys.organization(organizationId)] : []),
     );
+}
+
+export async function getInvitationDetails(token: string): Promise<InvitationDetailsResult> {
+    const invitationToken = await getValidUserToken(token, 'INVITATION_ACCEPT');
+    if (!invitationToken) {
+        throw createError('Token is invalid or expired', 400);
+    }
+
+    const metadata =
+        invitationToken.metadata && typeof invitationToken.metadata === 'object'
+            ? (invitationToken.metadata as Record<string, unknown>)
+            : {};
+    const organizationMemberId =
+        typeof metadata.organizationMemberId === 'string' ? metadata.organizationMemberId : undefined;
+    const teamMemberId = typeof metadata.teamMemberId === 'string' ? metadata.teamMemberId : undefined;
+
+    const user = await prisma.user.findUnique({
+        where: { id: invitationToken.userId },
+        select: {
+            email: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            passwordHash: true,
+        },
+    });
+
+    if (!user) {
+        throw createError('Invited user not found', 404);
+    }
+
+    const [organizationMember, teamMember] = await Promise.all([
+        organizationMemberId
+            ? prisma.organizationMember.findUnique({
+                  where: { id: organizationMemberId },
+                  select: {
+                      role: true,
+                      organizationId: true,
+                      organization: {
+                          select: {
+                              name: true,
+                          },
+                      },
+                      invitedBy: {
+                          select: {
+                              firstName: true,
+                              lastName: true,
+                              displayName: true,
+                              email: true,
+                          },
+                      },
+                  },
+              })
+            : Promise.resolve(null),
+        teamMemberId
+            ? prisma.teamMember.findUnique({
+                  where: { id: teamMemberId },
+                  select: {
+                      teamId: true,
+                      team: {
+                          select: {
+                              name: true,
+                          },
+                      },
+                  },
+              })
+            : Promise.resolve(null),
+    ]);
+
+    const inviterName = organizationMember?.invitedBy
+        ? organizationMember.invitedBy.displayName ||
+          [organizationMember.invitedBy.firstName, organizationMember.invitedBy.lastName]
+              .filter(Boolean)
+              .join(' ') ||
+          organizationMember.invitedBy.email
+        : undefined;
+
+    return {
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        displayName: user.displayName,
+        organizationId: organizationMember?.organizationId,
+        organizationName: organizationMember?.organization.name,
+        teamId: teamMember?.teamId,
+        teamName: teamMember?.team.name,
+        inviterName,
+        role: organizationMember?.role,
+        requiresPassword: !user.passwordHash,
+        expiresAt: invitationToken.expiresAt,
+    };
 }
 
 export async function logoutSession(userId: string, sessionId: string): Promise<void> {
