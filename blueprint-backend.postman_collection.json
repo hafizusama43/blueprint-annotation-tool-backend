@@ -1,0 +1,1088 @@
+{
+  "info": {
+    "_postman_id": "3f790f76-a6ea-44bd-a403-2e64c01fcb3a",
+    "name": "Blueprint Backend API",
+    "description": "Module-wise Postman collection for `blueprint-annotation-tool-backend` using reusable `{{base_url}}` and `{{token}}` variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api/v1" },
+    { "key": "token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "verification_token", "value": "" },
+    { "key": "reset_token", "value": "" },
+    { "key": "invitation_token", "value": "" },
+    { "key": "user_id", "value": "" },
+    { "key": "organization_id", "value": "" },
+    { "key": "team_id", "value": "" },
+    { "key": "project_id", "value": "" },
+    { "key": "blueprint_id", "value": "" },
+    { "key": "blueprint_page_id", "value": "" },
+    { "key": "shape_id", "value": "" },
+    { "key": "shape_point_id", "value": "" },
+    { "key": "calibration_id", "value": "" },
+    { "key": "plan_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register - Personal Workspace",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.user && data.user.id) pm.collectionVariables.set('user_id', data.user.id);",
+                  "  if (data.organizationId) pm.collectionVariables.set('organization_id', data.organizationId);",
+                  "  if (data.projectId) pm.collectionVariables.set('project_id', data.projectId);",
+                  "  if (data.verificationToken) pm.collectionVariables.set('verification_token', data.verificationToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Password123!\",\n  \"firstName\": \"Abdur\",\n  \"lastName\": \"Rehman\",\n  \"displayName\": \"Abdur Rehman\",\n  \"workspaceType\": \"personal\",\n  \"projectName\": \"My Project\"\n}"
+            },
+            "url": "{{base_url}}/auth/register"
+          }
+        },
+        {
+          "name": "Register - Organization Workspace",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"org-admin@example.com\",\n  \"password\": \"Password123!\",\n  \"firstName\": \"Org\",\n  \"lastName\": \"Admin\",\n  \"displayName\": \"Org Admin\",\n  \"workspaceType\": \"organization\",\n  \"organizationName\": \"Acme Design\",\n  \"organizationSlug\": \"acme-design\",\n  \"projectName\": \"Starter Project\",\n  \"teamName\": \"Core Team\"\n}"
+            },
+            "url": "{{base_url}}/auth/register"
+          }
+        },
+        {
+          "name": "Verify Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{verification_token}}\"\n}"
+            },
+            "url": "{{base_url}}/auth/verify-email"
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.collectionVariables.set('token', data.accessToken);",
+                  "  if (data.refreshToken) pm.collectionVariables.set('refresh_token', data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"Password123!\",\n  \"deviceName\": \"Postman\"\n}"
+            },
+            "url": "{{base_url}}/auth/login"
+          }
+        },
+        {
+          "name": "Refresh Session",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.accessToken) pm.collectionVariables.set('token', data.accessToken);",
+                  "  if (data.refreshToken) pm.collectionVariables.set('refresh_token', data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+            },
+            "url": "{{base_url}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.resetToken) pm.collectionVariables.set('reset_token', data.resetToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\"\n}"
+            },
+            "url": "{{base_url}}/auth/forgot-password"
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_token}}\",\n  \"password\": \"NewPassword123!\"\n}"
+            },
+            "url": "{{base_url}}/auth/reset-password"
+          }
+        },
+        {
+          "name": "Accept Invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{invitation_token}}\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": "{{base_url}}/auth/accept-invitation"
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{token}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"Password123!\",\n  \"newPassword\": \"NewPassword123!\"\n}"
+            },
+            "url": "{{base_url}}/auth/change-password"
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{token}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{base_url}}/auth/me"
+          }
+        },
+        {
+          "name": "Sessions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{token}}", "type": "string" }
+              ]
+            },
+            "method": "GET",
+            "url": "{{base_url}}/auth/sessions"
+          }
+        },
+        {
+          "name": "Logout Other Sessions",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{token}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "url": "{{base_url}}/auth/logout-other-sessions"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                { "key": "token", "value": "{{token}}", "type": "string" }
+              ]
+            },
+            "method": "POST",
+            "url": "{{base_url}}/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/dashboard"
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/users"
+          }
+        },
+        {
+          "name": "Update User Global Role",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"globalRole\": \"SUPER_ADMIN\"\n}"
+            },
+            "url": "{{base_url}}/admin/users/{{user_id}}/global-role"
+          }
+        },
+        {
+          "name": "Organizations",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/organizations"
+          }
+        },
+        {
+          "name": "Update Organization Status",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"SUSPENDED\"\n}"
+            },
+            "url": "{{base_url}}/admin/organizations/{{organization_id}}/status"
+          }
+        },
+        {
+          "name": "Teams",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/teams"
+          }
+        },
+        {
+          "name": "Update Team Status",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"DISABLED\"\n}"
+            },
+            "url": "{{base_url}}/admin/teams/{{team_id}}/status"
+          }
+        },
+        {
+          "name": "Projects",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/projects"
+          }
+        },
+        {
+          "name": "Subscriptions",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/subscriptions"
+          }
+        },
+        {
+          "name": "Payments",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/payments"
+          }
+        },
+        {
+          "name": "Blueprints",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/blueprints"
+          }
+        },
+        {
+          "name": "Audit Logs",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/admin/audit-logs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Organizations",
+      "item": [
+        {
+          "name": "List Organizations",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/organizations"
+          }
+        },
+        {
+          "name": "Create Organization",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('organization_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Organization\",\n  \"slug\": \"acme-organization\",\n  \"description\": \"Main org\",\n  \"billingEmail\": \"billing@acme.com\",\n  \"personalWorkspace\": false,\n  \"collaborationEnabled\": true\n}"
+            },
+            "url": "{{base_url}}/organizations"
+          }
+        },
+        {
+          "name": "Get Organization",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/organizations/{{organization_id}}"
+          }
+        },
+        {
+          "name": "Update Organization",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Organization Updated\",\n  \"description\": \"Updated org description\",\n  \"billingEmail\": \"accounts@acme.com\",\n  \"collaborationEnabled\": true\n}"
+            },
+            "url": "{{base_url}}/organizations/{{organization_id}}"
+          }
+        },
+        {
+          "name": "Update Organization Status",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{base_url}}/organizations/{{organization_id}}/status"
+          }
+        },
+        {
+          "name": "Add Organization Member",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{user_id}}\",\n  \"role\": \"CLIENT\"\n}"
+            },
+            "url": "{{base_url}}/organizations/{{organization_id}}/members"
+          }
+        },
+        {
+          "name": "Remove Organization Member",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{base_url}}/organizations/{{organization_id}}/members/{{user_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Teams",
+      "item": [
+        {
+          "name": "List Teams",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/teams?organizationId={{organization_id}}"
+          }
+        },
+        {
+          "name": "Create Team",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('team_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationId\": \"{{organization_id}}\",\n  \"name\": \"Core Team\",\n  \"slug\": \"core-team\",\n  \"description\": \"Main delivery team\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{base_url}}/teams"
+          }
+        },
+        {
+          "name": "Get Team",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/teams/{{team_id}}"
+          }
+        },
+        {
+          "name": "Update Team",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Core Team Updated\",\n  \"description\": \"Updated team description\",\n  \"status\": \"ACTIVE\"\n}"
+            },
+            "url": "{{base_url}}/teams/{{team_id}}"
+          }
+        },
+        {
+          "name": "Add Team Member",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{user_id}}\",\n  \"role\": \"CLIENT\"\n}"
+            },
+            "url": "{{base_url}}/teams/{{team_id}}/members"
+          }
+        },
+        {
+          "name": "Remove Team Member",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{base_url}}/teams/{{team_id}}/members/{{user_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Projects",
+      "item": [
+        {
+          "name": "List Projects",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/projects?organizationId={{organization_id}}&teamId={{team_id}}"
+          }
+        },
+        {
+          "name": "Create Project",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('project_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"organizationId\": \"{{organization_id}}\",\n  \"teamId\": \"{{team_id}}\",\n  \"name\": \"Drawing Review\",\n  \"slug\": \"drawing-review\",\n  \"description\": \"Review workflow project\",\n  \"collaborationEnabled\": true\n}"
+            },
+            "url": "{{base_url}}/projects"
+          }
+        },
+        {
+          "name": "Get Project",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/projects/{{project_id}}"
+          }
+        },
+        {
+          "name": "Update Project",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Drawing Review Updated\",\n  \"description\": \"Updated project\",\n  \"teamId\": \"{{team_id}}\",\n  \"collaborationEnabled\": true\n}"
+            },
+            "url": "{{base_url}}/projects/{{project_id}}"
+          }
+        },
+        {
+          "name": "Archive Project",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "url": "{{base_url}}/projects/{{project_id}}/archive"
+          }
+        },
+        {
+          "name": "Add Project Collaborator",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{user_id}}\",\n  \"role\": \"CLIENT\",\n  \"teamId\": \"{{team_id}}\"\n}"
+            },
+            "url": "{{base_url}}/projects/{{project_id}}/collaborators"
+          }
+        },
+        {
+          "name": "Remove Project Collaborator",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{base_url}}/projects/{{project_id}}/collaborators/{{user_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "List Plans",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/subscriptions/plans"
+          }
+        },
+        {
+          "name": "Create Plan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('plan_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"pro-monthly\",\n  \"name\": \"Pro Monthly\",\n  \"description\": \"Main paid tier\",\n  \"providerPlanId\": \"price_123456789\",\n  \"billingInterval\": \"MONTHLY\",\n  \"amountInCents\": 4900,\n  \"currency\": \"USD\",\n  \"maxUsers\": 25,\n  \"maxProjects\": 100,\n  \"maxStorageGb\": 200,\n  \"features\": {\n    \"ai\": true,\n    \"prioritySupport\": true\n  }\n}"
+            },
+            "url": "{{base_url}}/subscriptions/plans"
+          }
+        },
+        {
+          "name": "Create Checkout Session",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"{{plan_id}}\"\n}"
+            },
+            "url": "{{base_url}}/subscriptions/organizations/{{organization_id}}/checkout"
+          }
+        },
+        {
+          "name": "List Organization Subscriptions",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/subscriptions/organizations/{{organization_id}}/subscriptions"
+          }
+        },
+        {
+          "name": "Create Organization Subscription",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"planId\": \"{{plan_id}}\",\n  \"provider\": \"STRIPE\",\n  \"providerCustomerId\": \"cus_123456\",\n  \"providerSubscriptionId\": \"sub_123456\",\n  \"status\": \"ACTIVE\",\n  \"metadata\": {\n    \"source\": \"manual\"\n  }\n}"
+            },
+            "url": "{{base_url}}/subscriptions/organizations/{{organization_id}}/subscriptions"
+          }
+        },
+        {
+          "name": "List Payments",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/subscriptions/organizations/{{organization_id}}/payments"
+          }
+        },
+        {
+          "name": "Create Payment",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amountInCents\": 4900,\n  \"currency\": \"USD\",\n  \"provider\": \"STRIPE\",\n  \"providerPaymentId\": \"pi_123456\",\n  \"providerInvoiceId\": \"in_123456\",\n  \"status\": \"SUCCEEDED\",\n  \"metadata\": {\n    \"note\": \"initial payment\"\n  }\n}"
+            },
+            "url": "{{base_url}}/subscriptions/organizations/{{organization_id}}/payments"
+          }
+        },
+        {
+          "name": "Stripe Webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"checkout.session.completed\",\n  \"data\": {\n    \"object\": {\n      \"metadata\": {\n        \"organizationId\": \"{{organization_id}}\",\n        \"planId\": \"{{plan_id}}\"\n      },\n      \"subscription\": \"sub_123456\",\n      \"customer\": \"cus_123456\"\n    }\n  }\n}"
+            },
+            "url": "{{base_url}}/subscriptions/stripe/webhook"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Blueprints",
+      "item": [
+        {
+          "name": "Get Presigned Upload URL",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fileName\": \"drawing.pdf\",\n  \"contentType\": \"application/pdf\"\n}"
+            },
+            "url": "{{base_url}}/blueprints/presigned-upload-url"
+          }
+        },
+        {
+          "name": "Create Blueprint (Manual)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 202) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('blueprint_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Blueprint A\",\n  \"description\": \"Initial upload\",\n  \"fileUrl\": \"https://example.com/blueprints/blueprint-a.pdf\",\n  \"projectId\": \"{{project_id}}\",\n  \"uploadedByUserId\": \"{{user_id}}\",\n  \"pageCount\": 1,\n  \"metadata\": {\n    \"source\": \"manual\"\n  }\n}"
+            },
+            "url": "{{base_url}}/blueprints"
+          }
+        },
+        {
+          "name": "Upload Blueprint From Existing Key",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"raw-files/example-drawing.pdf\",\n  \"originalFileName\": \"drawing.pdf\",\n  \"projectId\": \"{{project_id}}\",\n  \"uploadedByUserId\": \"{{user_id}}\",\n  \"name\": \"Uploaded Drawing\",\n  \"description\": \"From presigned upload\",\n  \"metadata\": \"{\\\"floor\\\":1}\"\n}"
+            },
+            "url": "{{base_url}}/blueprints/upload"
+          }
+        },
+        {
+          "name": "List Blueprints",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/blueprints?projectId={{project_id}}"
+          }
+        },
+        {
+          "name": "Get Blueprint",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/blueprints/{{blueprint_id}}"
+          }
+        },
+        {
+          "name": "Get Blueprint Status",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/blueprints/{{blueprint_id}}/status"
+          }
+        },
+        {
+          "name": "Queue Blueprint Reprocessing",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PUT",
+            "url": "{{base_url}}/blueprints/{{blueprint_id}}/process"
+          }
+        },
+        {
+          "name": "Retry Blueprint Processing By Body",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{blueprint_id}}\"\n}"
+            },
+            "url": "{{base_url}}/blueprints/retry-processing"
+          }
+        },
+        {
+          "name": "Delete Blueprint",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{base_url}}/blueprints/{{blueprint_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shapes",
+      "item": [
+        {
+          "name": "List Shapes",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/shapes"
+          }
+        },
+        {
+          "name": "Create Shape",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('shape_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blueprintPageId\": \"{{blueprint_page_id}}\",\n  \"type\": \"POLYGON\",\n  \"label\": \"Room Outline\",\n  \"measurement\": 145.6,\n  \"unit\": \"sqft\",\n  \"fillColor\": \"#22c55e\",\n  \"strokeColor\": \"#166534\",\n  \"metadata\": {\n    \"category\": \"room\"\n  }\n}"
+            },
+            "url": "{{base_url}}/shapes"
+          }
+        },
+        {
+          "name": "Get Shape",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/shapes/{{shape_id}}"
+          }
+        },
+        {
+          "name": "Update Shape",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Room Outline Updated\",\n  \"measurement\": 150.2,\n  \"unit\": \"sqft\",\n  \"fillColor\": \"#4ade80\",\n  \"strokeColor\": \"#15803d\",\n  \"metadata\": {\n    \"updated\": true\n  }\n}"
+            },
+            "url": "{{base_url}}/shapes/{{shape_id}}"
+          }
+        },
+        {
+          "name": "Delete Shape",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{base_url}}/shapes/{{shape_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shape Points",
+      "item": [
+        {
+          "name": "List Shape Points",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/shape-points"
+          }
+        },
+        {
+          "name": "Create Shape Point",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('shape_point_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"shapeId\": \"{{shape_id}}\",\n  \"x\": 120.5,\n  \"y\": 340.25,\n  \"order\": 0\n}"
+            },
+            "url": "{{base_url}}/shape-points"
+          }
+        },
+        {
+          "name": "Get Shape Point",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/shape-points/{{shape_point_id}}"
+          }
+        },
+        {
+          "name": "Update Shape Point",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"x\": 140.75,\n  \"y\": 360.5,\n  \"order\": 1\n}"
+            },
+            "url": "{{base_url}}/shape-points/{{shape_point_id}}"
+          }
+        },
+        {
+          "name": "Delete Shape Point",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{base_url}}/shape-points/{{shape_point_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Calibrations",
+      "item": [
+        {
+          "name": "List Calibrations",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/calibrations"
+          }
+        },
+        {
+          "name": "Create Calibration",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.id) pm.collectionVariables.set('calibration_id', data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"blueprintPageId\": \"{{blueprint_page_id}}\",\n  \"pixelsPerUnit\": 12.5,\n  \"unit\": \"ft\",\n  \"referenceLabel\": \"Scale Line\",\n  \"referenceStart\": { \"x\": 10, \"y\": 20 },\n  \"referenceEnd\": { \"x\": 110, \"y\": 20 }\n}"
+            },
+            "url": "{{base_url}}/calibrations"
+          }
+        },
+        {
+          "name": "Get Calibration",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "GET",
+            "url": "{{base_url}}/calibrations/{{calibration_id}}"
+          }
+        },
+        {
+          "name": "Update Calibration",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pixelsPerUnit\": 15.2,\n  \"unit\": \"ft\",\n  \"referenceLabel\": \"Updated Scale\",\n  \"referenceStart\": { \"x\": 15, \"y\": 22 },\n  \"referenceEnd\": { \"x\": 120, \"y\": 22 }\n}"
+            },
+            "url": "{{base_url}}/calibrations/{{calibration_id}}"
+          }
+        },
+        {
+          "name": "Delete Calibration",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }] },
+            "method": "DELETE",
+            "url": "{{base_url}}/calibrations/{{calibration_id}}"
+          }
+        }
+      ]
+    }
+  ]
+}
