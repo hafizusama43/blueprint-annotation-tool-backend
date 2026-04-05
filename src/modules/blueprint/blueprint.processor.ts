@@ -182,13 +182,22 @@ async function uploadPagesToR2InBatches(
 export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
     setImmediate(async () => {
         try {
-            await blueprintService.updateBlueprint(job.blueprintId, {
-                processingStatus: 'PROCESSING',
+            await blueprintService.setBlueprintProcessingState(job.blueprintId, {
+                processingStatus: 'PROCESSING_PAGES',
+                processingStep: 'rendering_pdf_pages',
                 processingError: null,
                 processedAt: null,
+                processingStartedAt: new Date(),
+                processingCompletedAt: null,
             });
 
             const pageAssets = await renderPdfPagesToImages(job.filePath, job.fileName);
+            await blueprintService.setBlueprintProcessingState(job.blueprintId, {
+                totalPages: pageAssets.length,
+                totalBatches: Math.max(1, Math.ceil(pageAssets.length / PAGE_UPLOAD_CONCURRENCY)),
+                currentBatch: pageAssets.length > 0 ? 1 : 0,
+                processingStep: 'uploading_rendered_pages',
+            });
             const uploadedPages = await uploadPagesToR2InBatches(job.blueprintId, pageAssets);
 
             await blueprintService.replaceBlueprintPagesAndMarkReady(
@@ -203,9 +212,16 @@ export function enqueuePdfBlueprintProcessing(job: ProcessingJob): void {
             try {
                 await blueprintService.updateBlueprint(job.blueprintId, {
                     pageCount: 0,
+                    totalPages: 0,
+                    processedPages: 0,
+                    thumbnailsGenerated: 0,
+                    readyPages: 0,
+                    failedPages: 0,
                     processingStatus: 'FAILED',
+                    processingStep: 'processing_failed',
                     processingError: message,
                     processedAt: null,
+                    processingCompletedAt: null,
                 });
             } catch (updateError) {
                 console.error('Failed to update blueprint processing status', updateError);
@@ -228,6 +244,17 @@ export async function enqueueImageBlueprintProcessing(job: ProcessingJob): Promi
     const thumbnailPath = path.join(imageAssetDirectoryPath, thumbnailName);
 
     try {
+        await blueprintService.setBlueprintProcessingState(job.blueprintId, {
+            processingStatus: 'PROCESSING_PAGES',
+            processingStep: 'processing_single_image',
+            processingError: null,
+            processedAt: null,
+            processingStartedAt: new Date(),
+            processingCompletedAt: null,
+            totalPages: 1,
+            totalBatches: 1,
+            currentBatch: 1,
+        });
         await mkdir(imageAssetDirectoryPath, { recursive: true });
         await sharp(job.filePath).rotate().toFile(imagePath);
 
@@ -271,9 +298,16 @@ export async function enqueueImageBlueprintProcessing(job: ProcessingJob): Promi
         try {
             await blueprintService.updateBlueprint(job.blueprintId, {
                 pageCount: 0,
+                totalPages: 1,
+                processedPages: 0,
+                thumbnailsGenerated: 0,
+                readyPages: 0,
+                failedPages: 1,
                 processingStatus: 'FAILED',
+                processingStep: 'processing_failed',
                 processingError: message,
                 processedAt: null,
+                processingCompletedAt: null,
             });
         } catch (updateError) {
             console.error('Failed to update image processing status', updateError);

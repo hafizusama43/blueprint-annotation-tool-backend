@@ -46,6 +46,20 @@ export async function createCalibration(req: Request, res: Response, next: NextF
                     id: payload.blueprintPageId,
                 },
             },
+            ...(req.auth?.userId
+                ? {
+                      createdBy: {
+                          connect: {
+                              id: req.auth.userId,
+                          },
+                      },
+                      updatedBy: {
+                          connect: {
+                              id: req.auth.userId,
+                          },
+                      },
+                  }
+                : {}),
             pixelsPerUnit: payload.pixelsPerUnit,
             unit: payload.unit,
             referenceLabel: payload.referenceLabel ?? null,

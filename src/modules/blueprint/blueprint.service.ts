@@ -3,7 +3,14 @@ import { mkdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
-import type { Blueprint, BlueprintPage, BlueprintProcessingStatus, Prisma } from '@prisma/client';
+import type {
+    Blueprint,
+    BlueprintPage,
+    BlueprintProcessingStatus,
+    Prisma,
+    Project,
+    User,
+} from '@prisma/client';
 import { Upload } from '@aws-sdk/lib-storage';
 import {
     DeleteObjectCommand,
@@ -22,10 +29,27 @@ import { uploadsDirectory } from '../../middleware/upload.middleware';
 export type BlueprintPayload = Prisma.BlueprintCreateInput;
 export type BlueprintWithPages = Blueprint & {
     pages: BlueprintPage[];
+    project?: Project | null;
+    uploadedBy?: User | null;
 };
 export type BlueprintStatus = Pick<
     Blueprint,
-    'id' | 'processingStatus' | 'processingError' | 'processedAt' | 'pageCount' | 'updatedAt'
+    | 'id'
+    | 'processingStatus'
+    | 'processingStep'
+    | 'processingError'
+    | 'processedAt'
+    | 'pageCount'
+    | 'totalPages'
+    | 'processedPages'
+    | 'thumbnailsGenerated'
+    | 'aiProcessedPages'
+    | 'readyPages'
+    | 'failedPages'
+    | 'currentBatch'
+    | 'totalBatches'
+    | 'lastHeartbeatAt'
+    | 'updatedAt'
 >;
 
 function normalizePublicUrl(url: string | null): string | null {
@@ -34,7 +58,7 @@ function normalizePublicUrl(url: string | null): string | null {
     }
 
     try {
-        const configuredBase = new URL('https://pub-5a5d61ecb84741ba9f41b8310be99555.r2.dev');
+        const configuredBase = new URL(R2_PUBLIC_BASE_URL);
         const parsed = new URL(url);
         const isKnownR2Host =
             parsed.hostname.endsWith('.r2.cloudflarestorage.com') ||
@@ -69,18 +93,16 @@ function normalizeBlueprintWithPagesPublicUrls(blueprint: BlueprintWithPages): B
     };
 }
 
-export async function getAllBlueprints(): Promise<Blueprint[]> {
+export async function getAllBlueprints(filters?: { projectId?: string }): Promise<Blueprint[]> {
     const blueprints = await prisma.blueprint.findMany({
+        where: filters?.projectId
+            ? {
+                  projectId: filters.projectId,
+              }
+            : undefined,
         orderBy: {
             createdAt: 'desc',
         },
-        // include: {
-        //     pages: {
-        //         orderBy: {
-        //             pageNumber: 'asc',
-        //         },
-        //     },
-        // },
     });
 
     return blueprints.map((blueprint) => normalizeBlueprintPublicUrls(blueprint));
@@ -90,6 +112,8 @@ export async function getBlueprintById(id: string): Promise<BlueprintWithPages |
     const blueprint = await prisma.blueprint.findUnique({
         where: { id },
         include: {
+            project: true,
+            uploadedBy: true,
             pages: {
                 orderBy: {
                     pageNumber: 'asc',
@@ -107,9 +131,19 @@ export async function getBlueprintStatusById(id: string): Promise<BlueprintStatu
         select: {
             id: true,
             processingStatus: true,
+            processingStep: true,
             processingError: true,
             processedAt: true,
             pageCount: true,
+            totalPages: true,
+            processedPages: true,
+            thumbnailsGenerated: true,
+            aiProcessedPages: true,
+            readyPages: true,
+            failedPages: true,
+            currentBatch: true,
+            totalBatches: true,
+            lastHeartbeatAt: true,
             updatedAt: true,
         },
     });
@@ -119,6 +153,8 @@ export async function createBlueprint(data: BlueprintPayload): Promise<Blueprint
     return prisma.blueprint.create({
         data,
         include: {
+            project: true,
+            uploadedBy: true,
             pages: {
                 orderBy: {
                     pageNumber: 'asc',
@@ -136,6 +172,8 @@ export async function updateBlueprint(
         where: { id },
         data,
         include: {
+            project: true,
+            uploadedBy: true,
             pages: {
                 orderBy: {
                     pageNumber: 'asc',
@@ -167,11 +205,23 @@ export async function replaceBlueprintPagesAndMarkReady(
             where: { id: blueprintId },
             data: {
                 pageCount: pages.length,
+                totalPages: pages.length,
+                processedPages: pages.length,
+                thumbnailsGenerated: pages.length,
+                readyPages: pages.length,
+                failedPages: 0,
+                currentBatch: pages.length > 0 ? 1 : 0,
+                totalBatches: pages.length > 0 ? 1 : 0,
                 processingStatus: 'READY' satisfies BlueprintProcessingStatus,
+                processingStep: 'completed',
                 processingError: null,
                 processedAt: new Date(),
+                processingCompletedAt: new Date(),
+                lastHeartbeatAt: new Date(),
             },
             include: {
+                project: true,
+                uploadedBy: true,
                 pages: {
                     orderBy: {
                         pageNumber: 'asc',
@@ -194,11 +244,27 @@ export async function resetBlueprintForProcessing(
             where: { id: blueprintId },
             data: {
                 pageCount: 0,
-                processingStatus: 'PROCESSING',
+                totalPages: 0,
+                processedPages: 0,
+                thumbnailsGenerated: 0,
+                aiProcessedPages: 0,
+                readyPages: 0,
+                failedPages: 0,
+                currentBatch: 0,
+                totalBatches: 0,
+                processingStatus: 'PROCESSING_PAGES',
+                processingStep: 'queued_for_processing',
                 processingError: null,
                 processedAt: null,
+                processingStartedAt: new Date(),
+                processingCompletedAt: null,
+                processingWorkerId: null,
+                processingJobId: null,
+                lastHeartbeatAt: new Date(),
             },
             include: {
+                project: true,
+                uploadedBy: true,
                 pages: {
                     orderBy: {
                         pageNumber: 'asc',
@@ -213,6 +279,8 @@ export async function deleteBlueprintById(id: string): Promise<BlueprintWithPage
     return prisma.blueprint.delete({
         where: { id },
         include: {
+            project: true,
+            uploadedBy: true,
             pages: {
                 orderBy: {
                     pageNumber: 'asc',
@@ -482,6 +550,19 @@ export async function uploadFileToR2(
     }
 
     throw createError('Failed to upload file to R2 after retries', 502, lastError);
+}
+
+export async function setBlueprintProcessingState(
+    blueprintId: string,
+    data: Prisma.BlueprintUpdateInput,
+): Promise<void> {
+    await prisma.blueprint.update({
+        where: { id: blueprintId },
+        data: {
+            ...data,
+            lastHeartbeatAt: new Date(),
+        },
+    });
 }
 
 export async function deleteR2ObjectsByPrefix(prefix: string): Promise<void> {

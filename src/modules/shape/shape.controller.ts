@@ -49,6 +49,20 @@ export async function createShape(req: Request, res: Response, next: NextFunctio
                     id: payload.blueprintPageId,
                 },
             },
+            ...(req.auth?.userId
+                ? {
+                      createdBy: {
+                          connect: {
+                              id: req.auth.userId,
+                          },
+                      },
+                      updatedBy: {
+                          connect: {
+                              id: req.auth.userId,
+                          },
+                      },
+                  }
+                : {}),
             type: payload.type,
             label: payload.label ?? null,
             measurement: payload.measurement ?? null,

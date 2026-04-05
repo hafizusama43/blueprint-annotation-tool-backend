@@ -5,8 +5,13 @@ import morgan from 'morgan';
 import path from 'node:path';
 import blueprintRoutes from './modules/blueprint/blueprint.routes';
 import calibrationRoutes from './modules/calibration/calibration.routes';
+import authRoutes from './modules/auth/auth.routes';
+import organizationRoutes from './modules/organization/organization.routes';
+import projectRoutes from './modules/project/project.routes';
 import shapeRoutes from './modules/shape/shape.routes';
 import shapePointRoutes from './modules/shapePoint/shapePoint.routes';
+import subscriptionRoutes from './modules/subscription/subscription.routes';
+import teamRoutes from './modules/team/team.routes';
 import { env, validateEnv } from './config/env';
 import { rateLimit } from './middleware/rateLimit';
 import { errorHandler } from './middleware/error.middleware';
@@ -41,8 +46,13 @@ export function createApp(): Express {
 
     app.use(`${apiPrefix}/blueprints`, blueprintRoutes);
     app.use(`${apiPrefix}/calibrations`, calibrationRoutes);
+    app.use(`${apiPrefix}/auth`, authRoutes);
+    app.use(`${apiPrefix}/organizations`, organizationRoutes);
+    app.use(`${apiPrefix}/projects`, projectRoutes);
     app.use(`${apiPrefix}/shapes`, shapeRoutes);
     app.use(`${apiPrefix}/shape-points`, shapePointRoutes);
+    app.use(`${apiPrefix}/subscriptions`, subscriptionRoutes);
+    app.use(`${apiPrefix}/teams`, teamRoutes);
 
     app.get('/health', (_req, res) => {
         res.json({

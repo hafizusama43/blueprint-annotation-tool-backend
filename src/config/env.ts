@@ -15,6 +15,26 @@ export const envSchema = z.object({
     FRONTEND_URL: z.string().url().default('https://www.rohanonlinegrocery.com'),
     CORS_ORIGIN: z.string().optional(),
     APP_VERSION: z.string().default('1.0.0'),
+    JWT_ACCESS_SECRET: z.string().min(32),
+    JWT_REFRESH_SECRET: z.string().min(32),
+    JWT_ACCESS_TTL_MINUTES: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(15),
+    JWT_REFRESH_TTL_DAYS: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(30),
+    PASSWORD_SCRYPT_COST: z
+        .union([
+            z.string().transform(Number).pipe(z.number().int().positive()),
+            z.number().int().positive(),
+        ])
+        .default(16384),
     CF_R2_ACCESS_KEY: z.string().min(1),
     CF_R2_SECRET_KEY: z.string().min(1),
     CF_R2_ACCOUNT_ID: z.string().min(1),

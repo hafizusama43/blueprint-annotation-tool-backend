@@ -172,7 +172,9 @@ function buildBlueprintPages(
 
 export async function getAllBlueprints(_req: Request, res: Response, next: NextFunction) {
     try {
-        const blueprints = await blueprintService.getAllBlueprints();
+        const projectId =
+            typeof _req.query.projectId === 'string' ? _req.query.projectId : undefined;
+        const blueprints = await blueprintService.getAllBlueprints({ projectId });
         res.json(blueprints);
     } catch (error) {
         next(error);
@@ -219,7 +221,33 @@ export async function createBlueprint(req: Request, res: Response, next: NextFun
             name: payload.name,
             description: payload.description ?? null,
             fileUrl: payload.fileUrl,
+            ...(payload.projectId
+                ? {
+                      project: {
+                          connect: {
+                              id: payload.projectId,
+                          },
+                      },
+                  }
+                : {}),
+            ...(payload.uploadedByUserId
+                ? {
+                      uploadedBy: {
+                          connect: {
+                              id: payload.uploadedByUserId,
+                          },
+                      },
+                  }
+                : {}),
             pageCount: payload.pageCount ?? 1,
+            totalPages: payload.pageCount ?? 1,
+            processedPages: payload.pageCount ?? 1,
+            thumbnailsGenerated: payload.pageCount ?? 1,
+            readyPages: payload.pageCount ?? 1,
+            processingStatus: BlueprintProcessingStatus.READY,
+            processingStep: 'created_manually',
+            processingCompletedAt: new Date(),
+            processedAt: new Date(),
             metadata: payload.metadata ?? undefined,
             pages: {
                 create: buildBlueprintPages(
@@ -254,15 +282,43 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
             name: payload.name ?? createDefaultBlueprintName(payload.originalFileName),
             description: payload.description ?? null,
             fileUrl,
+            storageKey: payload.key,
             originalFileName: payload.originalFileName,
             mimeType: r2Object.contentType,
             fileSizeBytes: r2Object.fileSizeBytes,
             pageCount: isPdf ? 0 : 1,
+            totalPages: isPdf ? 0 : 1,
+            processedPages: 0,
+            thumbnailsGenerated: 0,
+            aiProcessedPages: 0,
+            readyPages: 0,
+            failedPages: 0,
+            processingStep: isPdf ? 'queued_for_processing' : 'image_processing_started',
             processingStatus: isPdf
                 ? BlueprintProcessingStatus.PENDING
-                : BlueprintProcessingStatus.READY,
-            processedAt: isPdf ? null : new Date(),
+                : BlueprintProcessingStatus.PROCESSING_PAGES,
+            processingStartedAt: new Date(),
+            processingCompletedAt: null,
+            processedAt: null,
             metadata: attachR2Metadata(metadata, payload.key),
+            ...(payload.projectId
+                ? {
+                      project: {
+                          connect: {
+                              id: payload.projectId,
+                          },
+                      },
+                  }
+                : {}),
+            ...(payload.uploadedByUserId
+                ? {
+                      uploadedBy: {
+                          connect: {
+                              id: payload.uploadedByUserId,
+                          },
+                      },
+                  }
+                : {}),
         };
 
         const created = await blueprintService.createBlueprint(createPayload);
@@ -281,7 +337,7 @@ export async function uploadBlueprint(req: Request, res: Response, next: NextFun
             });
         }
 
-        res.status(isPdf ? 202 : 201).json(created);
+        res.status(202).json(created);
     } catch (error) {
         next(error);
     }
@@ -320,7 +376,10 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
                 throw createError('Only PDF blueprints can be reprocessed', 400);
             }
 
-            if (blueprint.processingStatus === BlueprintProcessingStatus.PROCESSING) {
+            if (
+                blueprint.processingStatus === BlueprintProcessingStatus.PROCESSING_PAGES ||
+                blueprint.processingStatus === BlueprintProcessingStatus.PROCESSING_AI
+            ) {
                 return;
             }
 
@@ -349,7 +408,13 @@ export async function retryBlueprintProcessing(req: Request, res: Response, next
             try {
                 await blueprintService.updateBlueprint(blueprintId, {
                     pageCount: 0,
+                    totalPages: 0,
+                    processedPages: 0,
+                    thumbnailsGenerated: 0,
+                    readyPages: 0,
+                    failedPages: 0,
                     processingStatus: BlueprintProcessingStatus.FAILED,
+                    processingStep: 'queueing_failed',
                     processingError: errorMessage,
                     processedAt: null,
                 });
@@ -376,7 +441,10 @@ export async function retryBlueprintProcessingAndWait(
             return next(createError('Only PDF blueprints can be reprocessed', 400));
         }
 
-        if (blueprint.processingStatus === BlueprintProcessingStatus.PROCESSING) {
+        if (
+            blueprint.processingStatus === BlueprintProcessingStatus.PROCESSING_PAGES ||
+            blueprint.processingStatus === BlueprintProcessingStatus.PROCESSING_AI
+        ) {
             return next(createError('Blueprint is already being processed', 409));
         }
 

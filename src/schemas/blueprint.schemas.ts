@@ -4,6 +4,8 @@ export const blueprintSchema = z.object({
     name: z.string().min(2),
     description: z.string().optional(),
     fileUrl: z.string().min(2),
+    projectId: z.string().cuid().optional(),
+    uploadedByUserId: z.string().cuid().optional(),
     pageCount: z.number().int().positive().optional(),
     metadata: z.record(z.any()).optional(),
 });
@@ -14,6 +16,8 @@ export const uploadBlueprintSchema = z.object({
     fileUrl: z.string().url().optional(),
     name: z.string().min(2).optional(),
     description: z.string().optional(),
+    projectId: z.string().cuid().optional(),
+    uploadedByUserId: z.string().cuid().optional(),
     metadata: z.string().optional(),
 });
 

@@ -6,78 +6,375 @@ datasource db {
     provider = "postgresql"
 }
 
-model Blueprint {
-    id               String   @id @default(cuid())
-    name             String
-    description      String?
-    fileUrl          String
-    originalFileName String?
-    mimeType         String?
-    fileSizeBytes    Int?
-    pageCount        Int      @default(0)
-    processingStatus BlueprintProcessingStatus @default(READY)
-    processingError  String?
-    processedAt      DateTime?
-    metadata         Json?
-    createdAt        DateTime @default(now())
-    updatedAt        DateTime @updatedAt
+model User {
+    id                        String                 @id @default(cuid())
+    email                     String                 @unique
+    passwordHash              String?
+    firstName                 String?
+    lastName                  String?
+    displayName               String?
+    authProvider              AuthProvider           @default(LOCAL)
+    externalAuthId            String?
+    status                    UserStatus             @default(ACTIVE)
+    lastLoginAt               DateTime?
+    createdAt                 DateTime               @default(now())
+    updatedAt                 DateTime               @updatedAt
+    authSessions              AuthSession[]
+    loginEvents               LoginEvent[]
+    organizationMemberships   OrganizationMember[]
+    invitedOrganizationLinks  OrganizationMember[]   @relation("OrganizationMemberInvitedBy")
+    ownedOrganizations        Organization[]         @relation("OrganizationOwner")
+    teamMemberships           TeamMember[]
+    invitedTeamLinks          TeamMember[]           @relation("TeamMemberInvitedBy")
+    createdTeams              Team[]                 @relation("TeamCreatedBy")
+    createdProjects           Project[]              @relation("ProjectCreatedBy")
+    projectCollaborations     ProjectCollaborator[]
+    invitedProjectLinks       ProjectCollaborator[]  @relation("ProjectCollaboratorAddedBy")
+    uploadedBlueprints        Blueprint[]            @relation("BlueprintUploadedBy")
+    createdCalibrations       Calibration[]          @relation("CalibrationCreatedBy")
+    updatedCalibrations       Calibration[]          @relation("CalibrationUpdatedBy")
+    createdShapes             Shape[]                @relation("ShapeCreatedBy")
+    updatedShapes             Shape[]                @relation("ShapeUpdatedBy")
+}
 
-    pages BlueprintPage[]
+model AuthSession {
+    id               String       @id @default(cuid())
+    userId           String
+    refreshTokenHash String       @unique
+    tokenFamily      String?
+    deviceName       String?
+    userAgent        String?
+    ipAddress        String?
+    lastSeenAt       DateTime?
+    expiresAt        DateTime
+    revokedAt        DateTime?
+    createdAt        DateTime     @default(now())
+    updatedAt        DateTime     @updatedAt
+    user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+    loginEvents      LoginEvent[]
+
+    @@index([userId])
+    @@index([expiresAt])
+}
+
+model LoginEvent {
+    id         String         @id @default(cuid())
+    userId     String?
+    sessionId  String?
+    email      String?
+    eventType  LoginEventType
+    success    Boolean        @default(true)
+    ipAddress  String?
+    userAgent  String?
+    metadata   Json?
+    createdAt  DateTime       @default(now())
+    user       User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+    session    AuthSession?   @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+    @@index([userId])
+    @@index([sessionId])
+    @@index([createdAt])
+}
+
+model Organization {
+    id                    String                   @id @default(cuid())
+    name                  String
+    slug                  String                   @unique
+    description           String?
+    billingEmail          String?
+    personalWorkspace     Boolean                  @default(false)
+    collaborationEnabled  Boolean                  @default(false)
+    status                OrganizationStatus       @default(ACTIVE)
+    ownerId               String?
+    createdAt             DateTime                 @default(now())
+    updatedAt             DateTime                 @updatedAt
+    owner                 User?                    @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+    memberships           OrganizationMember[]
+    teams                 Team[]
+    projects              Project[]
+    subscriptions         OrganizationSubscription[]
+    payments              Payment[]
+
+    @@index([ownerId])
+}
+
+model OrganizationMember {
+    id              String            @id @default(cuid())
+    organizationId  String
+    userId          String
+    role            UserRole
+    status          MembershipStatus  @default(ACTIVE)
+    invitedByUserId String?
+    joinedAt        DateTime          @default(now())
+    createdAt       DateTime          @default(now())
+    updatedAt       DateTime          @updatedAt
+    organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+    invitedBy       User?             @relation("OrganizationMemberInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+    @@unique([organizationId, userId])
+    @@index([userId])
+}
+
+model Team {
+    id              String       @id @default(cuid())
+    organizationId  String
+    name            String
+    slug            String
+    description     String?
+    createdByUserId String?
+    createdAt       DateTime     @default(now())
+    updatedAt       DateTime     @updatedAt
+    organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    createdBy       User?        @relation("TeamCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+    members         TeamMember[]
+    projects        Project[]
+    projectCollaborators ProjectCollaborator[]
+
+    @@unique([organizationId, slug])
+    @@index([createdByUserId])
+}
+
+model TeamMember {
+    id              String            @id @default(cuid())
+    teamId          String
+    userId          String
+    role            UserRole
+    status          MembershipStatus  @default(ACTIVE)
+    invitedByUserId String?
+    joinedAt        DateTime          @default(now())
+    createdAt       DateTime          @default(now())
+    updatedAt       DateTime          @updatedAt
+    team            Team              @relation(fields: [teamId], references: [id], onDelete: Cascade)
+    user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+    invitedBy       User?             @relation("TeamMemberInvitedBy", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+
+    @@unique([teamId, userId])
+    @@index([userId])
+}
+
+model Project {
+    id              String               @id @default(cuid())
+    organizationId  String
+    teamId          String?
+    name            String
+    slug            String
+    description     String?
+    collaborationEnabled Boolean?
+    status          ProjectStatus        @default(ACTIVE)
+    createdByUserId String?
+    archivedAt      DateTime?
+    createdAt       DateTime             @default(now())
+    updatedAt       DateTime             @updatedAt
+    organization    Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    team            Team?                @relation(fields: [teamId], references: [id], onDelete: SetNull)
+    createdBy       User?                @relation("ProjectCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+    collaborators   ProjectCollaborator[]
+    blueprints      Blueprint[]
+
+    @@unique([organizationId, slug])
+    @@index([teamId])
+    @@index([createdByUserId])
+}
+
+model ProjectCollaborator {
+    id             String               @id @default(cuid())
+    projectId      String
+    userId         String
+    role           UserRole
+    accessSource   CollaborationSource  @default(DIRECT)
+    teamId         String?
+    addedByUserId  String?
+    createdAt      DateTime             @default(now())
+    updatedAt      DateTime             @updatedAt
+    project        Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+    user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+    team           Team?                @relation(fields: [teamId], references: [id], onDelete: SetNull)
+    addedBy        User?                @relation("ProjectCollaboratorAddedBy", fields: [addedByUserId], references: [id], onDelete: SetNull)
+
+    @@unique([projectId, userId])
+    @@index([userId])
+    @@index([teamId])
+}
+
+model SubscriptionPlan {
+    id                     String                   @id @default(cuid())
+    code                   String                   @unique
+    name                   String
+    description            String?
+    billingInterval        BillingInterval
+    amountInCents          Int
+    currency               String                   @default("USD")
+    maxUsers               Int?
+    maxProjects            Int?
+    maxStorageGb           Int?
+    features               Json?
+    isActive               Boolean                  @default(true)
+    createdAt              DateTime                 @default(now())
+    updatedAt              DateTime                 @updatedAt
+    organizationSubscriptions OrganizationSubscription[]
+}
+
+model OrganizationSubscription {
+    id                     String              @id @default(cuid())
+    organizationId         String
+    planId                 String
+    provider               BillingProvider     @default(GENERIC)
+    providerCustomerId     String?
+    providerSubscriptionId String?             @unique
+    status                 SubscriptionStatus  @default(TRIALING)
+    startsAt               DateTime            @default(now())
+    currentPeriodStart     DateTime?
+    currentPeriodEnd       DateTime?
+    trialEndsAt            DateTime?
+    cancelAtPeriodEnd      Boolean             @default(false)
+    canceledAt             DateTime?
+    endedAt                DateTime?
+    metadata               Json?
+    createdAt              DateTime            @default(now())
+    updatedAt              DateTime            @updatedAt
+    organization           Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    plan                   SubscriptionPlan    @relation(fields: [planId], references: [id], onDelete: Restrict)
+    payments               Payment[]
+
+    @@index([organizationId])
+    @@index([planId])
+}
+
+model Payment {
+    id                         String                 @id @default(cuid())
+    organizationId             String
+    organizationSubscriptionId String?
+    provider                   BillingProvider        @default(GENERIC)
+    providerPaymentId          String?                @unique
+    providerInvoiceId          String?
+    amountInCents              Int
+    currency                   String                 @default("USD")
+    status                     PaymentStatus          @default(PENDING)
+    dueAt                      DateTime?
+    paidAt                     DateTime?
+    failedAt                   DateTime?
+    refundedAt                 DateTime?
+    metadata                   Json?
+    createdAt                  DateTime               @default(now())
+    updatedAt                  DateTime               @updatedAt
+    organization               Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    organizationSubscription   OrganizationSubscription? @relation(fields: [organizationSubscriptionId], references: [id], onDelete: SetNull)
+
+    @@index([organizationId])
+    @@index([organizationSubscriptionId])
+}
+
+model Blueprint {
+    id                  String                    @id @default(cuid())
+    projectId           String?
+    uploadedByUserId    String?
+    name                String
+    description         String?
+    fileUrl             String
+    storageKey          String?
+    originalFileName    String?
+    mimeType            String?
+    fileSizeBytes       Int?
+    pageCount           Int                       @default(0)
+    totalPages          Int                       @default(0)
+    processedPages      Int                       @default(0)
+    thumbnailsGenerated Int                       @default(0)
+    aiProcessedPages    Int                       @default(0)
+    readyPages          Int                       @default(0)
+    failedPages         Int                       @default(0)
+    currentBatch        Int                       @default(0)
+    totalBatches        Int                       @default(0)
+    processingStatus    BlueprintProcessingStatus @default(READY)
+    processingStep      String?
+    processingError     String?
+    processingStartedAt DateTime?
+    processingCompletedAt DateTime?
+    processingWorkerId  String?
+    processingJobId     String?
+    lastHeartbeatAt     DateTime?
+    processedAt         DateTime?
+    metadata            Json?
+    createdAt           DateTime                  @default(now())
+    updatedAt           DateTime                  @updatedAt
+    project             Project?                  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+    uploadedBy          User?                     @relation("BlueprintUploadedBy", fields: [uploadedByUserId], references: [id], onDelete: SetNull)
+    pages               BlueprintPage[]
+
+    @@index([projectId])
+    @@index([uploadedByUserId])
+    @@index([processingStatus])
 }
 
 model BlueprintPage {
-    id          String   @id @default(cuid())
-    blueprintId String
-    pageNumber  Int
-    imageUrl    String?
-    thumbnailUrl String?
-    width       Int?
-    height      Int?
-    metadata    Json?
-    createdAt   DateTime @default(now())
-    updatedAt   DateTime @updatedAt
-
-    blueprint    Blueprint     @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
-    calibrations Calibration[]
-    shapes       Shape[]
+    id              String               @id @default(cuid())
+    blueprintId     String
+    pageNumber      Int
+    imageUrl        String?
+    thumbnailUrl    String?
+    width           Int?
+    height          Int?
+    pageStatus      PageProcessingStatus @default(READY)
+    aiStatus        AIProcessingStatus   @default(SKIPPED)
+    processingError String?
+    aiMetadata      Json?
+    renderedAt      DateTime?
+    aiProcessedAt   DateTime?
+    metadata        Json?
+    createdAt       DateTime             @default(now())
+    updatedAt       DateTime             @updatedAt
+    blueprint       Blueprint            @relation(fields: [blueprintId], references: [id], onDelete: Cascade)
+    calibrations    Calibration[]
+    shapes          Shape[]
 
     @@unique([blueprintId, pageNumber])
     @@index([blueprintId])
+    @@index([pageStatus])
 }
 
 model Calibration {
-    id              String   @id @default(cuid())
+    id              String        @id @default(cuid())
     blueprintPageId String
-    pixelsPerUnit  Float
-    unit           String
-    referenceLabel String?
-    referenceStart Json?
-    referenceEnd   Json?
-    createdAt      DateTime @default(now())
-    updatedAt      DateTime @updatedAt
-
-    blueprintPage BlueprintPage @relation(fields: [blueprintPageId], references: [id], onDelete: Cascade)
+    createdByUserId String?
+    updatedByUserId String?
+    pixelsPerUnit   Float
+    unit            String
+    referenceLabel  String?
+    referenceStart  Json?
+    referenceEnd    Json?
+    createdAt       DateTime      @default(now())
+    updatedAt       DateTime      @updatedAt
+    blueprintPage   BlueprintPage @relation(fields: [blueprintPageId], references: [id], onDelete: Cascade)
+    createdBy       User?         @relation("CalibrationCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+    updatedBy       User?         @relation("CalibrationUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
 
     @@index([blueprintPageId])
+    @@index([createdByUserId])
+    @@index([updatedByUserId])
 }
 
 model Shape {
-    id          String    @id @default(cuid())
+    id              String     @id @default(cuid())
     blueprintPageId String
-    type        ShapeType
-    label       String?
-    measurement Float?
-    unit        String?
-    fillColor   String?
-    strokeColor String?
-    metadata    Json?
-    createdAt   DateTime  @default(now())
-    updatedAt   DateTime  @updatedAt
-
-    blueprintPage BlueprintPage @relation(fields: [blueprintPageId], references: [id], onDelete: Cascade)
-    points        ShapePoint[]
+    createdByUserId String?
+    updatedByUserId String?
+    type            ShapeType
+    label           String?
+    measurement     Float?
+    unit            String?
+    fillColor       String?
+    strokeColor     String?
+    metadata        Json?
+    createdAt       DateTime   @default(now())
+    updatedAt       DateTime   @updatedAt
+    blueprintPage   BlueprintPage @relation(fields: [blueprintPageId], references: [id], onDelete: Cascade)
+    createdBy       User?      @relation("ShapeCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+    updatedBy       User?      @relation("ShapeUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+    points          ShapePoint[]
 
     @@index([blueprintPageId])
+    @@index([createdByUserId])
+    @@index([updatedByUserId])
 }
 
 model ShapePoint {
@@ -86,11 +383,88 @@ model ShapePoint {
     x       Float
     y       Float
     order   Int
-
-    shape Shape @relation(fields: [shapeId], references: [id], onDelete: Cascade)
+    shape   Shape  @relation(fields: [shapeId], references: [id], onDelete: Cascade)
 
     @@unique([shapeId, order])
     @@index([shapeId])
+}
+
+enum AuthProvider {
+    LOCAL
+    COGNITO
+    SSO
+}
+
+enum UserStatus {
+    ACTIVE
+    INVITED
+    SUSPENDED
+}
+
+enum UserRole {
+    ADMIN
+    CLIENT
+}
+
+enum MembershipStatus {
+    INVITED
+    ACTIVE
+    REMOVED
+}
+
+enum OrganizationStatus {
+    ACTIVE
+    TRIALING
+    SUSPENDED
+}
+
+enum ProjectStatus {
+    ACTIVE
+    ARCHIVED
+}
+
+enum CollaborationSource {
+    DIRECT
+    TEAM
+}
+
+enum BillingInterval {
+    MONTHLY
+    YEARLY
+    CUSTOM
+}
+
+enum BillingProvider {
+    GENERIC
+    STRIPE
+    PADDLE
+    MANUAL
+}
+
+enum SubscriptionStatus {
+    TRIALING
+    ACTIVE
+    PAST_DUE
+    CANCELED
+    EXPIRED
+    INCOMPLETE
+}
+
+enum PaymentStatus {
+    PENDING
+    SUCCEEDED
+    FAILED
+    REFUNDED
+    CANCELED
+}
+
+enum LoginEventType {
+    SIGN_IN
+    SIGN_OUT
+    TOKEN_REFRESH
+    FAILED_SIGN_IN
+    SESSION_REVOKED
+    PASSWORD_CHANGED
 }
 
 enum ShapeType {
@@ -101,7 +475,24 @@ enum ShapeType {
 
 enum BlueprintProcessingStatus {
     PENDING
+    PROCESSING_PAGES
+    PROCESSING_AI
+    PARTIALLY_READY
+    READY
+    FAILED
+}
+
+enum PageProcessingStatus {
+    PENDING
+    RENDERING
+    READY
+    FAILED
+}
+
+enum AIProcessingStatus {
+    PENDING
     PROCESSING
     READY
     FAILED
+    SKIPPED
 }
